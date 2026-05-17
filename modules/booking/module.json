@@ -1,0 +1,9 @@
+{
+  "key": "booking",
+  "name": "Booking",
+  "description": "Appointment scheduling and availability management.",
+  "route_prefix": "/api/v1/booking",
+  "is_enabled": true,
+  "permissions": ["booking.read", "booking.write"],
+  "websocket_events": ["booking:updated"]
+}

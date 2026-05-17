@@ -1,0 +1,9 @@
+{
+  "key": "arcade",
+  "name": "Arcade",
+  "description": "Arcade economy, leaderboards, and payouts.",
+  "route_prefix": "/api/v1/arcade",
+  "is_enabled": true,
+  "permissions": ["arcade.play", "arcade.admin"],
+  "websocket_events": ["arcade:leaderboard"]
+}

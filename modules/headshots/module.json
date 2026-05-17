@@ -1,0 +1,9 @@
+{
+  "key": "headshots",
+  "name": "Headshots",
+  "description": "Media booking and delivery workflows for headshot operations.",
+  "route_prefix": "/api/v1/headshots",
+  "is_enabled": true,
+  "permissions": ["headshots.read", "headshots.write"],
+  "websocket_events": ["headshots:job_updated"]
+}

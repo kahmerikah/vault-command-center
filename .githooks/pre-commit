@@ -1,0 +1,24 @@
+#!/usr/bin/env sh
+set -eu
+
+# Block committing environment files that may contain credentials.
+# Allow only .env.example templates.
+if git diff --cached --name-only | grep -E '(^|/)\.env($|\..+)' | grep -Ev '(^|/)\.env\.example$' >/dev/null 2>&1; then
+  echo "[vault-guard] Commit blocked: .env or .env.* files are staged."
+  echo "[vault-guard] Keep secrets local and commit only .env.example templates."
+  exit 1
+fi
+
+# Lightweight secret pattern scan on staged file contents.
+staged_files=$(git diff --cached --name-only | grep -Ev '(^|/)\.env\.example$|^\.githooks/pre-commit$' || true)
+if [ -n "$staged_files" ]; then
+  for f in $staged_files; do
+    if git show ":$f" | grep -E '(AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36}|sk_(live|test)_[A-Za-z0-9]{16,}|whsec_[A-Za-z0-9]{16,}|BEGIN (RSA|OPENSSH|EC) PRIVATE KEY)' >/dev/null 2>&1; then
+      echo "[vault-guard] Commit blocked: potential secret detected in $f"
+      echo "[vault-guard] Remove or rotate secrets before committing."
+      exit 1
+    fi
+  done
+fi
+
+exit 0

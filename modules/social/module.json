@@ -1,0 +1,9 @@
+{
+  "key": "social",
+  "name": "Social",
+  "description": "Community and messaging layer for SOMB ecosystem products.",
+  "route_prefix": "/api/v1/social",
+  "is_enabled": true,
+  "permissions": ["social.read", "social.write"],
+  "websocket_events": ["social:activity"]
+}

@@ -1,0 +1,9 @@
+{
+  "key": "blockchain",
+  "name": "Blockchain",
+  "description": "Wallets, token ledger, and transaction explorer services.",
+  "route_prefix": "/api/v1/blockchain",
+  "is_enabled": true,
+  "permissions": ["chain.read", "chain.write"],
+  "websocket_events": ["chain:transaction"]
+}

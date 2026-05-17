@@ -1,0 +1,9 @@
+{
+  "key": "kirknet",
+  "name": "KirkNet",
+  "description": "Integration layer for KirkNet chain and arcade systems.",
+  "route_prefix": "/api/v1/kirknet",
+  "is_enabled": true,
+  "permissions": ["kirknet.read", "kirknet.execute"],
+  "websocket_events": ["kirknet:event"]
+}

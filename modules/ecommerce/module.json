@@ -1,0 +1,9 @@
+{
+  "key": "ecommerce",
+  "name": "Ecommerce",
+  "description": "Product, checkout, and membership flows backed by Stripe.",
+  "route_prefix": "/api/v1/ecommerce",
+  "is_enabled": true,
+  "permissions": ["ecommerce.read", "ecommerce.write"],
+  "websocket_events": ["ecommerce:order_updated"]
+}

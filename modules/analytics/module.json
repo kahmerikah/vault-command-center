@@ -1,0 +1,9 @@
+{
+  "key": "analytics",
+  "name": "Analytics",
+  "description": "Cross-module traffic, conversion, and system usage analytics.",
+  "route_prefix": "/api/v1/analytics",
+  "is_enabled": true,
+  "permissions": ["analytics.read", "analytics.admin"],
+  "websocket_events": ["analytics:update"]
+}
