@@ -15,7 +15,7 @@ def log_request():
             actor_id=None,
             level="info",
             message=f"API call {request.method} {request.path}",
-            metadata={"request_id": getattr(g, "request_id", "n/a")},
+            meta={"request_id": getattr(g, "request_id", "n/a")},
         )
     )
     db.session.commit()

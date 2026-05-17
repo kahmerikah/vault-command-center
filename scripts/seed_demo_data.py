@@ -22,7 +22,7 @@ def seed():
             )
 
         if not ActivityLog.query.first():
-            db.session.add(ActivityLog(level="info", message="Vault seeded", metadata={"source": "seed_demo_data"}))
+            db.session.add(ActivityLog(level="info", message="Vault seeded", meta={"source": "seed_demo_data"}))
 
         db.session.commit()
 

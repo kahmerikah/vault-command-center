@@ -19,4 +19,4 @@ class ActivityLog(db.Model, IdMixin, TimestampMixin):
     actor_id = db.Column(db.String(36), nullable=True)
     level = db.Column(db.String(16), default="info", nullable=False)
     message = db.Column(db.String(255), nullable=False)
-    metadata = db.Column(db.JSON, nullable=True)
+    meta = db.Column(db.JSON, nullable=True)
