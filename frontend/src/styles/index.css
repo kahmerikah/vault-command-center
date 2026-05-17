@@ -1,4 +1,5 @@
 @import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@400;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=VT323&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -6,22 +7,192 @@
 
 :root {
   color-scheme: dark;
+  --vault-obsidian: #07090d;
+  --vault-panel: rgba(10, 14, 18, 0.72);
+  --vault-glass: rgba(255, 255, 255, 0.03);
+  --vault-line: rgba(148, 163, 184, 0.12);
+  --vault-neon: rgba(52, 211, 153, 0.55);
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
   margin: 0;
   font-family: Manrope, sans-serif;
   background:
-    radial-gradient(1200px 500px at 20% -10%, rgba(184, 159, 122, 0.08), transparent 70%),
-    radial-gradient(1000px 600px at 90% 120%, rgba(34, 211, 238, 0.08), transparent 70%),
-    #0d0f12;
+    radial-gradient(1100px 480px at 18% -10%, rgba(52, 211, 153, 0.1), transparent 66%),
+    radial-gradient(900px 540px at 88% 10%, rgba(34, 211, 238, 0.08), transparent 62%),
+    radial-gradient(900px 600px at 50% 100%, rgba(251, 191, 36, 0.05), transparent 58%),
+    var(--vault-obsidian);
+  color: #e5eef7;
 }
 
 * {
   box-sizing: border-box;
 }
 
+::selection {
+  background: rgba(52, 211, 153, 0.24);
+  color: #ffffff;
+}
+
 button,
 a {
   transition: all 0.2s ease;
+}
+
+.font-display {
+  font-family: Sora, Manrope, sans-serif;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.overlay::before {
+  background:
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 50%, rgba(255, 255, 255, 0.01) 50%),
+    linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 180, 0.02), rgba(0, 0, 255, 0.02));
+  background-size: 100% 3px, 6px 100%;
+  content: "";
+  display: block;
+  position: absolute;
+  inset: 0;
+  opacity: 0.85;
+}
+
+.overlay::after {
+  animation: somb-flicker 0.32s infinite;
+  background: rgba(255, 255, 255, 0.015);
+  content: "";
+  display: block;
+  position: absolute;
+  inset: 0;
+}
+
+.scanline {
+  animation: somb-scan 11s linear infinite;
+  background: linear-gradient(to bottom, rgba(52, 211, 153, 0) 0%, rgba(52, 211, 153, 0.18) 50%, rgba(52, 211, 153, 0) 100%);
+  display: block;
+  height: 22px;
+  left: 0;
+  opacity: 0.06;
+  pointer-events: none;
+  position: fixed;
+  right: 0;
+  top: -5%;
+  z-index: 21;
+}
+
+.somb-landing__ambient {
+  pointer-events: none;
+  position: fixed;
+  inset: auto;
+  z-index: 0;
+  filter: blur(64px);
+  opacity: 0.8;
+}
+
+.somb-landing__ambient--left {
+  left: -80px;
+  top: 8vh;
+  width: 320px;
+  height: 320px;
+  background: radial-gradient(circle, rgba(52, 211, 153, 0.18), rgba(52, 211, 153, 0));
+}
+
+.somb-landing__ambient--right {
+  right: -90px;
+  bottom: -40px;
+  width: 380px;
+  height: 380px;
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.14), rgba(34, 211, 238, 0));
+}
+
+.somb-terminal {
+  position: relative;
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 20%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.02), transparent 40%),
+    var(--vault-panel);
+}
+
+.somb-terminal::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 25%);
+}
+
+.somb-nav-link:focus-visible,
+.somb-input:focus-visible,
+.somb-textarea:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.24);
+}
+
+.clearfix::after {
+  clear: both;
+  content: "";
+  display: table;
+}
+
+@keyframes somb-scan {
+  0% {
+    transform: translateY(-10%);
+  }
+
+  100% {
+    transform: translateY(120vh);
+  }
+}
+
+@keyframes somb-flicker {
+  0% { opacity: 0.12; }
+  5% { opacity: 0.25; }
+  10% { opacity: 0.08; }
+  15% { opacity: 0.18; }
+  20% { opacity: 0.12; }
+  25% { opacity: 0.24; }
+  30% { opacity: 0.09; }
+  35% { opacity: 0.2; }
+  40% { opacity: 0.14; }
+  45% { opacity: 0.22; }
+  50% { opacity: 0.1; }
+  55% { opacity: 0.19; }
+  60% { opacity: 0.12; }
+  65% { opacity: 0.24; }
+  70% { opacity: 0.08; }
+  75% { opacity: 0.18; }
+  80% { opacity: 0.13; }
+  85% { opacity: 0.21; }
+  90% { opacity: 0.11; }
+  95% { opacity: 0.17; }
+  100% { opacity: 0.12; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .scanline,
+  .overlay::after {
+    animation: none !important;
+  }
 }
