@@ -17,6 +17,12 @@ frontend/dist/
 !.env.example
 !**/.env.example
 
+# SSH keys (never commit)
+ssh_key
+ssh_key.pub
+**/ssh_key
+**/ssh_key.pub
+
 # Runtime state
 *.sqlite3
 logs/*.log
