@@ -1,4 +1,4 @@
-from flask import Blueprint, request
+from flask import Blueprint, current_app, request
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 from backend.services.auth_service import AuthService
 from backend.models import User
@@ -75,6 +75,50 @@ def me():
             },
         }
     )
+
+
+@auth_bp.post("/forgot-password")
+def forgot_password():
+    data = request.get_json(silent=True) or {}
+    identity = (data.get("identity") or "").strip()
+    if not identity:
+        return error_response("identity is required", 400)
+
+    token = AuthService.issue_password_reset_token(
+        identity=identity,
+        secret_key=current_app.config["SECRET_KEY"],
+    )
+
+    return success_response(
+        {
+            "message": "if the account exists, a reset token has been issued",
+            "reset_token": token,
+        }
+    )
+
+
+@auth_bp.post("/reset-password")
+def reset_password():
+    data = request.get_json(silent=True) or {}
+    reset_token = data.get("reset_token") or ""
+    new_password = data.get("new_password") or ""
+
+    if len(new_password) < 12:
+        return error_response("password must be at least 12 characters", 400)
+    if not reset_token:
+        return error_response("reset_token is required", 400)
+
+    try:
+        user = AuthService.reset_password_with_token(
+            reset_token=reset_token,
+            new_password=new_password,
+            secret_key=current_app.config["SECRET_KEY"],
+            max_age_seconds=current_app.config["PASSWORD_RESET_TOKEN_EXP_SECONDS"],
+        )
+    except ValueError as exc:
+        return error_response(str(exc), 400)
+
+    return success_response({"id": user.id, "username": user.username, "email": user.email})
 
 
 @auth_bp.post("/refresh")

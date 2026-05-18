@@ -7,6 +7,7 @@ from backend.middleware.security import apply_security_headers
 from backend.models import *  # noqa: F403,F401
 from backend.routes import register_routes
 from backend.services.auth_service import AuthService
+from backend.services.blockchain_service import BlockchainService
 from backend.services.module_registry import ModuleRegistry
 from backend.sockets.events import register_socket_events
 from backend.utils.logger import configure_logging
@@ -47,6 +48,16 @@ def create_app() -> Flask:
         # Bootstrap in one place so fresh installs can run without a manual migration step.
         db.create_all()
         AuthService.bootstrap_roles()
+        system_user = AuthService.bootstrap_system_user(
+            username=app.config["SYSTEM_USERNAME"],
+            email=app.config["SYSTEM_EMAIL"],
+            password=app.config["SYSTEM_PASSWORD"],
+        )
+        if system_user:
+            BlockchainService.bootstrap_platform_chain(
+                system_user_id=system_user.id,
+                genesis_supply=app.config["PLATFORM_GENESIS_SUPPLY"],
+            )
 
     ModuleRegistry(app).bootstrap_from_manifests("modules")
     register_routes(app)

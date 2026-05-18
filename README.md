@@ -47,6 +47,7 @@ The SOMB Vault/
 
 ## Core Features Included
 - Central auth foundation: register/login/me, JWT + refresh-ready session model, RBAC roles
+- Password recovery flow: forgot-password token issue + reset-password endpoint and UI
 - Modular app registry: auto-discovers modules from module manifests
 - Real-time command-center dashboard: metrics, activity, notifications, revenue chart
 - API gateway layer: versioned APIs, request logging, health and gateway status endpoints
@@ -54,6 +55,7 @@ The SOMB Vault/
 - Unified notifications: in-app now, email/SMS architecture stubs included
 - Calendar + booking base: booking creation and event broadcasting
 - Blockchain base: wallet provisioning, transaction ledger, websocket transaction feed
+- Platform chain bootstrap: optional system user bootstrap and genesis mint on startup
 - Analytics service: cross-module event ingestion + dashboard rollups
 - Storage abstraction: local provider with cloud-ready extension point
 - Security baseline: JWT guards, RBAC middleware, secure headers, rate limiter, audit/activity tables
@@ -89,6 +91,21 @@ Frontend:
 1. cd frontend
 2. npm install
 3. npm run dev
+
+## System Login and Mint Bootstrap
+To bootstrap a system account with mint permissions, set these values in local/server `.env` before startup:
+- SYSTEM_USERNAME
+- SYSTEM_EMAIL
+- SYSTEM_PASSWORD
+
+On startup, if SYSTEM_PASSWORD is set, the app:
+1. ensures a `super_admin` system user exists
+2. ensures the system wallet exists
+3. mints the genesis supply into that wallet if not already minted
+
+Mint endpoint (super_admin only):
+- POST /api/v1/blockchain/mint
+- payload: { "wallet_id": "...", "amount": "100" }
 
 ## Deployment Instructions
 1. Provision VPS with Docker and Docker Compose.

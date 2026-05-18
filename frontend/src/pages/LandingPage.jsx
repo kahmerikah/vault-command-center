@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
+import { Link } from "react-router-dom";
 import api from "../lib/api";
 
 const statusLines = ["checking session...", "secure connection", "system ready", "awaiting credentials"];
@@ -125,6 +126,11 @@ export default function LandingPage({ onAuthenticated }) {
             >
               clear
             </button>
+          </div>
+          <div className="pt-1 text-right">
+            <Link to="/reset-password" className="font-mono text-[11px] uppercase tracking-[0.24em] text-emerald-300/65 hover:text-emerald-200">
+              forgot password
+            </Link>
           </div>
         </form>
 

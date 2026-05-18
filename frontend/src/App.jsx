@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import DashboardPage from "./pages/DashboardPage";
 import LandingPage from "./pages/LandingPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import api, { refreshSession, setAuthToken } from "./lib/api";
 import { disconnectSocket } from "./lib/socket";
 import { useVaultStore } from "./store/useVaultStore";
@@ -144,7 +145,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<LandingPage onAuthenticated={handleAuthenticated} />} />
       <Route path="/login" element={<LandingPage onAuthenticated={handleAuthenticated} />} />
-      <Route path="/reset-password" element={<LockedScreen title="reset password" />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/request-access" element={<LockedScreen title="request access" />} />
       {protectedPaths.map((path) => (
         <Route

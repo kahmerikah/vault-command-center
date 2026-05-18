@@ -1,4 +1,5 @@
 from flask_jwt_extended import create_access_token, create_refresh_token
+from itsdangerous import BadData, SignatureExpired, URLSafeTimedSerializer
 from backend.auth.tokens import get_jti
 from backend.extensions import db
 from backend.models import Role, Session, User
@@ -15,6 +16,73 @@ class AuthService:
             if not Role.query.filter_by(name=role_name).first():
                 db.session.add(Role(name=role_name, description=f"{role_name} role"))
         db.session.commit()
+
+    @staticmethod
+    def bootstrap_system_user(username: str, email: str, password: str):
+        if not password:
+            return None
+
+        role = Role.query.filter_by(name="super_admin").first()
+        if not role:
+            role = Role(name="super_admin", description="super admin role")
+            db.session.add(role)
+            db.session.commit()
+
+        user = User.query.filter((User.username == username) | (User.email == email)).first()
+        if user:
+            if user.role_id != role.id:
+                user.role_id = role.id
+                db.session.commit()
+            return user
+
+        user = User(
+            username=username,
+            email=email,
+            password_hash="",
+            role_id=role.id,
+            is_verified=True,
+            is_active=True,
+        )
+        try:
+            user.password_hash = hash_password(password)
+        except Exception:
+            return None
+        db.session.add(user)
+        db.session.commit()
+        return user
+
+    @staticmethod
+    def _reset_serializer(secret_key: str):
+        return URLSafeTimedSerializer(secret_key=secret_key, salt="password-reset")
+
+    @staticmethod
+    def issue_password_reset_token(identity: str, secret_key: str):
+        user = User.query.filter((User.username == identity) | (User.email == identity)).first()
+        if not user:
+            return None
+
+        serializer = AuthService._reset_serializer(secret_key)
+        return serializer.dumps({"uid": user.id})
+
+    @staticmethod
+    def reset_password_with_token(reset_token: str, new_password: str, secret_key: str, max_age_seconds: int):
+        serializer = AuthService._reset_serializer(secret_key)
+
+        try:
+            payload = serializer.loads(reset_token, max_age=max_age_seconds)
+        except SignatureExpired as exc:
+            raise ValueError("reset token expired") from exc
+        except BadData as exc:
+            raise ValueError("invalid reset token") from exc
+
+        user = User.query.filter_by(id=payload.get("uid")).first()
+        if not user:
+            raise ValueError("invalid reset token")
+
+        user.password_hash = hash_password(new_password)
+        Session.query.filter_by(user_id=user.id, is_revoked=False).update({"is_revoked": True})
+        db.session.commit()
+        return user
 
     @staticmethod
     def register(username: str, email: str, password: str, role_name: str = "member"):
