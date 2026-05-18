@@ -68,9 +68,13 @@ A full read-only audit is documented in:
 ### Option A: Docker (recommended)
 1. Copy environment template:
    - cp .env.example .env (PowerShell: Copy-Item .env.example .env)
-2. Start stack:
+2. Copy Nginx template:
+   - cp nginx/nginx.example.conf nginx/nginx.conf
+3. (Optional) copy compose template if starting from scratch:
+   - cp docker-compose.example.yml docker-compose.yml
+4. Start stack:
    - docker compose --env-file .env up -d --build
-3. Verify:
+5. Verify:
    - Frontend: http://localhost
    - API: http://localhost/api/v1/health
 
@@ -89,10 +93,7 @@ Frontend:
 ## Deployment Instructions
 1. Provision VPS with Docker and Docker Compose.
 2. Configure DNS for:
-   - vault/admin/api/arcade/booking.soleonmyback.us
-   - vault/admin/api/arcade/booking.negreauxtech.com
-   - vault/admin/api/arcade/booking.negreauxtech.org
-   - vault/admin/api/arcade/booking.negreaux.com
+   - vault/admin/api/arcade/booking.YOURSITE.com
 3. Set production .env values (secrets, DB, Redis, Stripe, SMTP).
 4. Run:
    - docker compose --env-file .env up -d --build
@@ -132,7 +133,7 @@ See docs/module_creation_guide.md for a complete step-by-step process.
 - Module manifests are used for discoverability and runtime registration.
 - Stripe, notifications, OAuth, and cloud storage include TODO extension points for safe incremental rollout.
 - Existing projects were left untouched and can migrate gradually via adapters under services/.
-- Domain strategy: `soleonmyback.us` is configured as canonical frontend/api host while all owned domains are valid routed hosts in Nginx.
+- Domain strategy: use placeholder hostnames in git (for example, `vault.YOURSITE.com` and `api.YOURSITE.com`) and apply real production domains via local `.env` and server-only Nginx config.
 
 ## Next Recommended Production Enhancements
 1. Add Alembic migration scripts for Vault schema versioning.

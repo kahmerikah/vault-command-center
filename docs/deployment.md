@@ -3,10 +3,7 @@
 ## VPS Requirements
 - Docker Engine + Docker Compose
 - DNS entries for:
-   - vault/admin/api/arcade/booking.soleonmyback.us
-   - vault/admin/api/arcade/booking.negreauxtech.com
-   - vault/admin/api/arcade/booking.negreauxtech.org
-   - vault/admin/api/arcade/booking.negreaux.com
+   - vault/admin/api/arcade/booking.YOURSITE.com
 
 ## Steps
 1. Copy .env.example to .env and set production values.
@@ -25,6 +22,6 @@
 - Configure object storage if media volume grows.
 
 ## Hostname Strategy
-- Canonical frontend host: vault.soleonmyback.us
-- Canonical API host: api.soleonmyback.us
+- Canonical frontend host: vault.YOURSITE.com
+- Canonical API host: api.YOURSITE.com
 - Apex/root domains are redirected to the canonical frontend host by Nginx.

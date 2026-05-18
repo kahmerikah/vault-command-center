@@ -17,6 +17,20 @@ frontend/dist/
 !.env.example
 !**/.env.example
 
+# Deployment secrets and server-specific overrides
+certbot/
+letsencrypt/
+ssl/
+**/certbot/
+**/letsencrypt/
+**/ssl/
+docker-compose.override.yml
+docker-compose.production.yml
+docker-compose.local.yml
+nginx/nginx.local.conf
+nginx/nginx.production.conf
+nginx/nginx.override.conf
+
 # SSH keys (never commit)
 ssh_key
 ssh_key.pub
@@ -27,6 +41,7 @@ ssh_key.pub
 *.sqlite3
 logs/*.log
 backups/*.sql
+instance/
 
 # IDE
 .vscode/
