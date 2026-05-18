@@ -1,4 +1,5 @@
 from flask import Blueprint
+from flask_jwt_extended import jwt_required
 from backend.models import RegisteredModule
 from backend.utils.responses import success_response
 
@@ -6,6 +7,7 @@ modules_bp = Blueprint("modules", __name__)
 
 
 @modules_bp.get("")
+@jwt_required()
 def list_modules():
     rows = RegisteredModule.query.order_by(RegisteredModule.name.asc()).all()
     return success_response(

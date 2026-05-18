@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import api, { setAuthToken } from "../lib/api";
-import socket from "../lib/socket";
+import socket, { connectSocket, disconnectSocket } from "../lib/socket";
 import { useVaultStore } from "../store/useVaultStore";
 import ActivityFeed from "../components/ActivityFeed";
 import MetricCard from "../components/MetricCard";
@@ -13,13 +13,38 @@ import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
 
 export default function DashboardPage() {
-  const { dashboard, setDashboard, modules, setModules, token, user } = useVaultStore();
+  const { dashboard, setDashboard, modules, setModules, accessToken, refreshToken, user, clearAuth } = useVaultStore();
+
+  const handleLogout = async () => {
+    try {
+      if (refreshToken) {
+        await api.post(
+          "/auth/logout",
+          {},
+          {
+            headers: {
+              Authorization: `Bearer ${refreshToken}`,
+            },
+          }
+        );
+      }
+    } catch {
+      // Ignore logout API errors to avoid trapping the user in UI.
+    } finally {
+      clearAuth();
+      setAuthToken("");
+      disconnectSocket();
+      window.location.assign("/login");
+    }
+  };
 
   useEffect(() => {
+    if (!accessToken) {
+      return undefined;
+    }
+
     const load = async () => {
-      if (token) {
-        setAuthToken(token);
-      }
+      setAuthToken(accessToken);
       try {
         const [overviewRes, modulesRes] = await Promise.all([
           api.get("/dashboard/overview"),
@@ -27,30 +52,15 @@ export default function DashboardPage() {
         ]);
         setDashboard(overviewRes.data.data);
         setModules(modulesRes.data.data.items || []);
-      } catch {
-        // Demo fallback keeps UI usable before auth or seed data is ready.
-        setDashboard({
-          metrics: {
-            users_total: 128,
-            payments_total: 342,
-            bookings_total: 51,
-            chain_tx_total: 812,
-            events_total: 2051,
-          },
-          revenue_trend: [
-            { date: "Mon", amount: 1200 },
-            { date: "Tue", amount: 2100 },
-            { date: "Wed", amount: 1850 },
-            { date: "Thu", amount: 2600 },
-            { date: "Fri", amount: 3100 },
-          ],
-          notifications: [{ id: "n1", title: "Vault online", body: "Realtime channel connected" }],
-          activity: [{ id: "a1", message: "Gateway booted", created_at: new Date().toISOString() }],
-        });
+      } catch (error) {
+        if (error?.response?.status === 401) {
+          clearAuth();
+        }
       }
     };
     load();
 
+    connectSocket(accessToken);
     socket.emit("dashboard:subscribe", { stream: "main" });
     socket.on("notification:new", () => load());
     socket.on("chain:transaction", () => load());
@@ -58,8 +68,9 @@ export default function DashboardPage() {
     return () => {
       socket.off("notification:new");
       socket.off("chain:transaction");
+      disconnectSocket();
     };
-  }, [token, setDashboard, setModules]);
+  }, [accessToken, clearAuth, setDashboard, setModules]);
 
   const metrics = dashboard?.metrics || {};
 
@@ -68,7 +79,7 @@ export default function DashboardPage() {
       <div className="mx-auto grid max-w-7xl gap-4 lg:grid-cols-[260px_1fr]">
         <Sidebar />
         <div className="space-y-4">
-          <Topbar user={user} />
+          <Topbar user={user} onLogout={handleLogout} />
           <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
             <MetricCard label="Active Users" value={metrics.users_total ?? "--"} hint="Live operators in ecosystem" />
             <MetricCard label="Payments" value={metrics.payments_total ?? "--"} hint="Stripe + platform logs" />

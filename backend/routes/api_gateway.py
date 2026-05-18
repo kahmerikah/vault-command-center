@@ -1,4 +1,5 @@
 from flask import Blueprint, g, request
+from flask_jwt_extended import jwt_required
 from backend.extensions import db
 from backend.models import ActivityLog
 from backend.utils.responses import success_response
@@ -22,5 +23,6 @@ def log_request():
 
 
 @gateway_bp.get("/status")
+@jwt_required()
 def gateway_status():
     return success_response({"gateway": "online", "version": "v1"})

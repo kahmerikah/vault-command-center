@@ -7,7 +7,7 @@ analytics_bp = Blueprint("analytics", __name__)
 
 
 @analytics_bp.post("/events")
-@jwt_required(optional=True)
+@jwt_required()
 def create_event():
     payload = request.get_json(silent=True) or {}
     event = AnalyticsService.track(

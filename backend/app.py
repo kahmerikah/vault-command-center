@@ -23,7 +23,22 @@ def create_app() -> Flask:
     migrate.init_app(app, db)
     jwt.init_app(app)
     limiter.init_app(app)
-    socketio.init_app(app)
+    socketio.init_app(app, cors_allowed_origins=app.config["ALLOWED_ORIGINS"])
+
+    @jwt.token_in_blocklist_loader
+    def is_token_revoked(_jwt_header, jwt_payload):
+        token_type = jwt_payload.get("type")
+        if token_type != "refresh":
+            return False
+
+        jti = jwt_payload.get("jti")
+        if not jti:
+            return True
+
+        from backend.models import Session  # Lazy import avoids circular model loading during app init.
+
+        session = Session.query.filter_by(refresh_token_jti=jti, is_revoked=False).first()
+        return session is None
 
     request_context_middleware(app)
     apply_security_headers(app)
