@@ -4,6 +4,7 @@ from flask import Blueprint, current_app, request
 import stripe
 from backend.extensions import db
 from backend.models import Payment, User
+from backend.services.activity_service import ActivityService
 from backend.utils.responses import error_response, success_response
 
 webhook_bp = Blueprint("stripe_webhook", __name__)
@@ -186,4 +187,9 @@ def stripe_webhook():
         return error_response(str(exc), 400)
 
     db.session.commit()
+    ActivityService.log(
+        message=f"Stripe webhook processed: {event_type}",
+        level="info",
+        meta={"event_type": event_type},
+    )
     return success_response({"received": True, "event_type": event_type})

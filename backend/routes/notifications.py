@@ -11,7 +11,15 @@ notifications_bp = Blueprint("notifications", __name__)
 @jwt_required()
 def list_notifications():
     user_id = get_jwt_identity()
-    notes = Notification.query.filter_by(user_id=user_id).order_by(Notification.created_at.desc()).all()
+    page = max(int(request.args.get("page", 1)), 1)
+    limit = min(max(int(request.args.get("limit", 20)), 1), 100)
+    include_archived = (request.args.get("include_archived", "false").lower() == "true")
+
+    query = Notification.query.filter_by(user_id=user_id)
+    if not include_archived:
+        query = query.filter(Notification.status != "archived")
+
+    paged = query.order_by(Notification.created_at.desc()).paginate(page=page, per_page=limit, error_out=False)
     return success_response(
         {
             "items": [
@@ -21,10 +29,18 @@ def list_notifications():
                     "body": n.body,
                     "channel": n.channel,
                     "is_read": n.is_read,
+                    "status": n.status,
                     "created_at": n.created_at.isoformat(),
                 }
-                for n in notes
-            ]
+                for n in paged.items
+            ],
+            "unread_count": Notification.query.filter_by(user_id=user_id, is_read=False).count(),
+            "pagination": {
+                "page": page,
+                "limit": limit,
+                "total": paged.total,
+                "pages": paged.pages,
+            },
         }
     )
 
@@ -41,3 +57,35 @@ def create_notification():
         channel=data.get("channel", "in_app"),
     )
     return success_response({"id": note.id}, 201)
+
+
+@notifications_bp.post("/<notification_id>/read")
+@jwt_required()
+def mark_read(notification_id):
+    user_id = get_jwt_identity()
+    note = Notification.query.filter_by(id=notification_id, user_id=user_id).first()
+    if not note:
+        return success_response({"updated": False}, 404)
+
+    note.is_read = True
+    if note.status == "queued":
+        note.status = "read"
+    from backend.extensions import db
+
+    db.session.commit()
+    return success_response({"updated": True})
+
+
+@notifications_bp.post("/<notification_id>/archive")
+@jwt_required()
+def archive(notification_id):
+    user_id = get_jwt_identity()
+    note = Notification.query.filter_by(id=notification_id, user_id=user_id).first()
+    if not note:
+        return success_response({"updated": False}, 404)
+
+    note.status = "archived"
+    from backend.extensions import db
+
+    db.session.commit()
+    return success_response({"updated": True})

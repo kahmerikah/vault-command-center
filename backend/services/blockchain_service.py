@@ -2,6 +2,7 @@ from uuid import uuid4
 from decimal import Decimal
 from backend.extensions import db, socketio
 from backend.models import ChainTransaction, Wallet
+from backend.services.activity_service import ActivityService
 
 
 class BlockchainService:
@@ -52,4 +53,9 @@ class BlockchainService:
         db.session.add(tx)
         db.session.commit()
         socketio.emit("chain:transaction", {"tx_hash": tx.tx_hash, "amount": str(tx.amount)})
+        ActivityService.log(
+            message=f"Chain transaction recorded: {tx.tx_type}",
+            level="info",
+            meta={"tx_hash": tx.tx_hash, "wallet_id": wallet_id, "amount": str(tx.amount)},
+        )
         return tx

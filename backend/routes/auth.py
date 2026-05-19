@@ -1,7 +1,8 @@
 from flask import Blueprint, current_app, request
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 from backend.services.auth_service import AuthService
-from backend.models import User
+from backend.models import Session, User
+from backend.services.activity_service import ActivityService
 from backend.utils.responses import error_response, success_response
 from backend.utils.validators import is_valid_email, normalize_email
 
@@ -41,7 +42,18 @@ def login():
             ip_address=request.remote_addr or "",
         )
     except ValueError as exc:
+        ActivityService.log(
+            message=f"Failed login for identity: {identity}",
+            level="warning",
+            meta={"ip": request.remote_addr or "", "identity": identity},
+        )
         return error_response(str(exc), 401)
+
+    ActivityService.log(
+        message=f"Successful login: {payload['user'].username}",
+        actor_id=payload["user"].id,
+        meta={"ip": request.remote_addr or ""},
+    )
 
     return success_response(
         {
@@ -53,6 +65,27 @@ def login():
                 "email": payload["user"].email,
                 "role": payload["user"].role.name,
             },
+        }
+    )
+
+
+@auth_bp.get("/sessions")
+@jwt_required()
+def sessions():
+    user_id = get_jwt_identity()
+    rows = Session.query.filter_by(user_id=user_id).order_by(Session.created_at.desc()).limit(25).all()
+    return success_response(
+        {
+            "items": [
+                {
+                    "id": row.id,
+                    "user_agent": row.user_agent,
+                    "ip_address": row.ip_address,
+                    "is_revoked": row.is_revoked,
+                    "created_at": row.created_at.isoformat(),
+                }
+                for row in rows
+            ]
         }
     )
 

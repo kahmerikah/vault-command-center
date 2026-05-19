@@ -1,11 +1,20 @@
-import { useEffect } from "react";
+import { Suspense, lazy, useEffect } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import DashboardPage from "./pages/DashboardPage";
 import LandingPage from "./pages/LandingPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import api, { refreshSession, setAuthToken } from "./lib/api";
 import { disconnectSocket } from "./lib/socket";
 import { useVaultStore } from "./store/useVaultStore";
+
+const DashboardPage = lazy(() => import("./pages/DashboardPage"));
+const AuthPage = lazy(() => import("./pages/AuthPage"));
+const PaymentsPage = lazy(() => import("./pages/PaymentsPage"));
+const BookingsPage = lazy(() => import("./pages/BookingsPage"));
+const BlockchainPage = lazy(() => import("./pages/BlockchainPage"));
+const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
+const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
+const ModulesPage = lazy(() => import("./pages/ModulesPage"));
 
 function LockedScreen({ title }) {
   return (
@@ -32,18 +41,42 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
+function PageTransition({ children }) {
+  const location = useLocation();
+  return (
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={location.pathname}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -6 }}
+        transition={{ duration: 0.2 }}
+      >
+        {children}
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
+function ProtectedPage({ element }) {
+  return (
+    <ProtectedRoute>
+      <Suspense fallback={<LockedScreen title="loading module" />}>
+        <PageTransition>{element}</PageTransition>
+      </Suspense>
+    </ProtectedRoute>
+  );
+}
+
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const {
     accessToken,
-    refreshToken,
-    user,
     setAuth,
     clearAuth,
     markAuthChecked,
     touchActivity,
-    hasIdleExpired,
   } = useVaultStore();
 
   useEffect(() => {
@@ -103,7 +136,6 @@ export default function App() {
 
   useEffect(() => {
     const onActivity = () => touchActivity();
-
     const events = ["click", "keydown", "mousemove", "scroll", "touchstart"];
     events.forEach((eventName) => window.addEventListener(eventName, onActivity, { passive: true }));
 
@@ -130,38 +162,27 @@ export default function App() {
     navigate(target, { replace: true });
   };
 
-  const protectedPaths = [
-    "/dashboard",
-    "/analytics",
-    "/modules",
-    "/payments",
-    "/vault",
-    "/bookings",
-    "/admin",
-    "/chain",
-  ];
-
   return (
     <Routes>
       <Route path="/" element={<LandingPage onAuthenticated={handleAuthenticated} />} />
       <Route path="/login" element={<LandingPage onAuthenticated={handleAuthenticated} />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/request-access" element={<LockedScreen title="request access" />} />
-      {protectedPaths.map((path) => (
-        <Route
-          key={path}
-          path={path}
-          element={(
-            <ProtectedRoute>
-              <DashboardPage />
-            </ProtectedRoute>
-          )}
-        />
-      ))}
-      <Route
-        path="*"
-        element={<Navigate to={accessToken ? "/dashboard" : "/login"} replace />}
-      />
+
+      <Route path="/dashboard" element={<ProtectedPage element={<DashboardPage />} />} />
+      <Route path="/auth" element={<ProtectedPage element={<AuthPage />} />} />
+      <Route path="/payments" element={<ProtectedPage element={<PaymentsPage />} />} />
+      <Route path="/bookings" element={<ProtectedPage element={<BookingsPage />} />} />
+      <Route path="/blockchain" element={<ProtectedPage element={<BlockchainPage />} />} />
+      <Route path="/notifications" element={<ProtectedPage element={<NotificationsPage />} />} />
+      <Route path="/analytics" element={<ProtectedPage element={<AnalyticsPage />} />} />
+      <Route path="/modules" element={<ProtectedPage element={<ModulesPage />} />} />
+
+      <Route path="/vault" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/chain" element={<Navigate to="/blockchain" replace />} />
+      <Route path="/admin" element={<Navigate to="/auth" replace />} />
+
+      <Route path="*" element={<Navigate to={accessToken ? "/dashboard" : "/login"} replace />} />
     </Routes>
   );
 }

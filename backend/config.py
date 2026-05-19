@@ -1,8 +1,10 @@
 import os
 from datetime import timedelta
+from time import time
 
 
 class Config:
+    STARTED_AT_EPOCH = int(time())
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret")
     SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", "sqlite:///vault.db")
     SQLALCHEMY_TRACK_MODIFICATIONS = False

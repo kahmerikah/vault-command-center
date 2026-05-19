@@ -1,5 +1,6 @@
 from backend.extensions import db, socketio
 from backend.models import Notification
+from backend.services.activity_service import ActivityService
 
 
 class NotificationService:
@@ -9,4 +10,9 @@ class NotificationService:
         db.session.add(note)
         db.session.commit()
         socketio.emit("notification:new", {"user_id": user_id, "title": title, "body": body})
+        ActivityService.log(
+            message=f"Notification created: {title}",
+            actor_id=user_id,
+            meta={"notification_id": note.id, "channel": channel},
+        )
         return note

@@ -30,8 +30,28 @@ class AuthService:
 
         user = User.query.filter((User.username == username) | (User.email == email)).first()
         if user:
+            changed = False
+            if user.username != username:
+                user.username = username
+                changed = True
+            if user.email != email:
+                user.email = email
+                changed = True
             if user.role_id != role.id:
                 user.role_id = role.id
+                changed = True
+            if not user.is_verified:
+                user.is_verified = True
+                changed = True
+            if not user.is_active:
+                user.is_active = True
+                changed = True
+            try:
+                user.password_hash = hash_password(password)
+            except Exception:
+                return None
+            changed = True
+            if changed:
                 db.session.commit()
             return user
 
