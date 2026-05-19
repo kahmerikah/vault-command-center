@@ -20,6 +20,8 @@ export default function PropertyPage() {
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [estimateForm, setEstimateForm] = useState({ address: "", zip_code: "", listing_price: "", sqft: "", property_type: "single_family" });
+  const [estimate, setEstimate] = useState(null);
   const [form, setForm] = useState({
     address: "", zip_code: "", city: "", state: "",
     property_type: "single_family", listing_price: "", bedrooms: "", bathrooms: "", sqft: "", notes: "",
@@ -74,6 +76,16 @@ export default function PropertyPage() {
 
   const deals = properties.filter(p => p.deal_verdict === "good_deal").length;
 
+  const runEstimate = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await api.post("/property/estimate", estimateForm);
+      setEstimate(res.data?.data || null);
+    } catch {
+      setEstimate(null);
+    }
+  };
+
   if (loading) return <div className="flex items-center justify-center h-64 font-mono text-slate-400 text-xs tracking-widest">loading property intelligence...</div>;
 
   return (
@@ -91,6 +103,52 @@ export default function PropertyPage() {
         <MetricCard label="Watching" value={properties.filter(p => p.status === "watching").length} status="ok" />
         <MetricCard label="Interested" value={properties.filter(p => p.status === "interested").length} status="ok" />
       </div>
+
+      <GlassPanel>
+        <p className="font-mono text-xs text-slate-500 mb-3 uppercase tracking-widest">Value Estimator</p>
+        <form onSubmit={runEstimate} className="grid grid-cols-2 gap-3">
+          <div className="col-span-2 flex flex-col gap-1">
+            <label className="font-mono text-xs text-slate-400">Address</label>
+            <input required value={estimateForm.address} onChange={e => setEstimateForm(p => ({ ...p, address: e.target.value }))}
+              className="bg-black/30 border border-white/10 rounded px-3 py-2 font-mono text-xs text-white outline-none focus:border-emerald-500/50" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="font-mono text-xs text-slate-400">Zip Code</label>
+            <input required value={estimateForm.zip_code} onChange={e => setEstimateForm(p => ({ ...p, zip_code: e.target.value }))}
+              className="bg-black/30 border border-white/10 rounded px-3 py-2 font-mono text-xs text-white outline-none focus:border-emerald-500/50" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="font-mono text-xs text-slate-400">Listing Price ($)</label>
+            <input value={estimateForm.listing_price} onChange={e => setEstimateForm(p => ({ ...p, listing_price: e.target.value }))}
+              className="bg-black/30 border border-white/10 rounded px-3 py-2 font-mono text-xs text-white outline-none focus:border-emerald-500/50" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="font-mono text-xs text-slate-400">Sqft</label>
+            <input value={estimateForm.sqft} onChange={e => setEstimateForm(p => ({ ...p, sqft: e.target.value }))}
+              className="bg-black/30 border border-white/10 rounded px-3 py-2 font-mono text-xs text-white outline-none focus:border-emerald-500/50" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="font-mono text-xs text-slate-400">Property Type</label>
+            <select value={estimateForm.property_type} onChange={e => setEstimateForm(p => ({ ...p, property_type: e.target.value }))}
+              className="bg-black/30 border border-white/10 rounded px-3 py-2 font-mono text-xs text-white outline-none">
+              {PROPERTY_TYPES.map(t => <option key={t} value={t}>{t.replace("_", " ")}</option>)}
+            </select>
+          </div>
+          <div className="col-span-2 flex justify-end">
+            <button type="submit" className="px-4 py-1.5 rounded-lg bg-emerald-600/80 text-white font-mono text-xs hover:bg-emerald-600 transition">
+              Estimate Value
+            </button>
+          </div>
+        </form>
+        {estimate && (
+          <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div><p className="font-mono text-xs text-slate-500">Estimated Value</p><p className="font-mono text-sm text-white">{estimate.estimated_value ? `$${Number(estimate.estimated_value).toLocaleString()}` : "—"}</p></div>
+            <div><p className="font-mono text-xs text-slate-500">Deal Verdict</p><p className={`font-mono text-sm ${verdictColor(estimate.deal_verdict)}`}>{estimate.deal_verdict?.replace("_", " ") || "unknown"}</p></div>
+            <div><p className="font-mono text-xs text-slate-500">Deal Score</p><p className="font-mono text-sm text-white">{estimate.deal_score ? `${Number(estimate.deal_score).toFixed(0)}/100` : "—"}</p></div>
+            <div><p className="font-mono text-xs text-slate-500">Comps Used</p><p className="font-mono text-sm text-white">{estimate.comps_used ?? 0}</p></div>
+          </div>
+        )}
+      </GlassPanel>
 
       {showAdd && (
         <GlassPanel>

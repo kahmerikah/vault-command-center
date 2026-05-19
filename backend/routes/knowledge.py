@@ -67,3 +67,11 @@ def list_kinds():
             "api_doc", "strategy", "recipe", "infrastructure", "automation",
         ]
     })
+
+
+@knowledge_bp.post("/bootstrap-api-docs")
+@jwt_required()
+def bootstrap_api_docs():
+    user_id = get_jwt_identity()
+    result = KnowledgeService.bootstrap_api_docs(user_id=user_id)
+    return success_response(result)

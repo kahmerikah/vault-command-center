@@ -5,6 +5,7 @@ from backend.extensions import socketio
 from backend.middleware.auth import require_roles
 from backend.models import ActivityLog
 from backend.services.activity_service import ActivityService
+from backend.services.system_sync_service import SystemSyncService
 from backend.services.terminal_service import TerminalService
 from backend.utils.responses import error_response, success_response
 
@@ -58,3 +59,20 @@ def dispatch_terminal_command():
         socketio.emit("terminal:line", {"line": line, "command": command}, room="ops")
 
     return success_response({"command": command, "lines": lines})
+
+
+@ops_bp.post("/system/pull-and-sync")
+@jwt_required()
+@require_roles("super_admin", "admin")
+def pull_and_sync_system():
+    actor_id = get_jwt_identity()
+    result = SystemSyncService.pull_and_sync_env()
+    ActivityService.log(
+        message="System pull-and-sync executed",
+        actor_id=actor_id,
+        meta={
+            "head": (result.get("git") or {}).get("head"),
+            "added_env_keys": ((result.get("env_sync") or {}).get("added_keys") or []),
+        },
+    )
+    return success_response(result)

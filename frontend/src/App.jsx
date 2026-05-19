@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import LandingPage from "./pages/LandingPage";
@@ -6,6 +6,7 @@ import ResetPasswordPage from "./pages/ResetPasswordPage";
 import api, { refreshSession, setAuthToken } from "./lib/api";
 import { disconnectSocket } from "./lib/socket";
 import { useVaultStore } from "./store/useVaultStore";
+import SettingsModal from "./components/SettingsModal";
 
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const AuthPage = lazy(() => import("./pages/AuthPage"));
@@ -19,6 +20,7 @@ const FinancialPage = lazy(() => import("./pages/FinancialPage"));
 const PropertyPage = lazy(() => import("./pages/PropertyPage"));
 const KnowledgePage = lazy(() => import("./pages/KnowledgePage"));
 const BriefingPage = lazy(() => import("./pages/BriefingPage"));
+const AssistantPage = lazy(() => import("./pages/AssistantPage"));
 
 function LockedScreen({ title }) {
   return (
@@ -73,6 +75,7 @@ function ProtectedPage({ element }) {
 }
 
 export default function App() {
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const {
@@ -167,7 +170,18 @@ export default function App() {
   };
 
   return (
-    <Routes>
+    <>
+      {accessToken && (
+        <button
+          type="button"
+          onClick={() => setSettingsOpen(true)}
+          className="fixed bottom-4 right-4 z-40 rounded-full border border-vault-accent/40 bg-vault-panel/80 px-4 py-2 text-xs uppercase tracking-[0.16em] text-vault-textDim hover:text-white"
+        >
+          Settings
+        </button>
+      )}
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <Routes>
       <Route path="/" element={<LandingPage onAuthenticated={handleAuthenticated} />} />
       <Route path="/login" element={<LandingPage onAuthenticated={handleAuthenticated} />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
@@ -185,12 +199,14 @@ export default function App() {
       <Route path="/property" element={<ProtectedPage element={<PropertyPage />} />} />
       <Route path="/knowledge" element={<ProtectedPage element={<KnowledgePage />} />} />
       <Route path="/briefing" element={<ProtectedPage element={<BriefingPage />} />} />
+      <Route path="/assistant" element={<ProtectedPage element={<AssistantPage />} />} />
 
       <Route path="/vault" element={<Navigate to="/dashboard" replace />} />
       <Route path="/chain" element={<Navigate to="/blockchain" replace />} />
       <Route path="/admin" element={<Navigate to="/auth" replace />} />
 
       <Route path="*" element={<Navigate to={accessToken ? "/dashboard" : "/login"} replace />} />
-    </Routes>
+      </Routes>
+    </>
   );
 }

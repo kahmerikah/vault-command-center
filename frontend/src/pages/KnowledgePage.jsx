@@ -28,6 +28,7 @@ export default function KnowledgePage() {
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ title: "", body: "", kind: "note", category: "", tags: "" });
   const [page, setPage] = useState(1);
+  const [importingDocs, setImportingDocs] = useState(false);
 
   const load = useCallback(async (q = search, kind = filterKind, p = page) => {
     if (!accessToken) return;
@@ -68,13 +69,28 @@ export default function KnowledgePage() {
     if (selected?.id === entry.id) setSelected(s => ({ ...s, is_pinned: !entry.is_pinned }));
   };
 
+  const importApiDocs = async () => {
+    setImportingDocs(true);
+    try {
+      await api.post("/knowledge/bootstrap-api-docs", {});
+      load();
+    } finally {
+      setImportingDocs(false);
+    }
+  };
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="font-mono text-lg tracking-widest text-white uppercase">Knowledge OS</h1>
-        <button type="button" onClick={() => setShowAdd(!showAdd)} className="px-3 py-1.5 rounded-lg border border-white/10 text-white font-mono text-xs hover:bg-white/5 transition">
-          + Add Entry
-        </button>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={importApiDocs} disabled={importingDocs} className="px-3 py-1.5 rounded-lg border border-blue-500/30 text-blue-300 font-mono text-xs hover:bg-blue-500/10 transition disabled:opacity-50">
+            {importingDocs ? "Importing..." : "Import API Docs"}
+          </button>
+          <button type="button" onClick={() => setShowAdd(!showAdd)} className="px-3 py-1.5 rounded-lg border border-white/10 text-white font-mono text-xs hover:bg-white/5 transition">
+            + Add Entry
+          </button>
+        </div>
       </div>
 
       {/* Search + Filter */}

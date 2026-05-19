@@ -4,6 +4,7 @@ const links = [
   { label: "Dashboard", to: "/dashboard" },
   { label: "Financial OS", to: "/financial" },
   { label: "Property Intel", to: "/property" },
+  { label: "Assistant", to: "/assistant" },
   { label: "Knowledge OS", to: "/knowledge" },
   { label: "Briefings", to: "/briefing" },
   { label: "Payments", to: "/payments" },

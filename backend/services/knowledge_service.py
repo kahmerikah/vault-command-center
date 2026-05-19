@@ -1,4 +1,5 @@
 """Knowledge OS service — searchable vault for notes, prompts, ideas, docs."""
+from pathlib import Path
 from backend.extensions import db
 from backend.models.knowledge import KnowledgeEntry
 from backend.services.activity_service import ActivityService
@@ -77,4 +78,76 @@ class KnowledgeService:
             "version": e.version,
             "created_at": e.created_at.isoformat() if e.created_at else None,
             "updated_at": e.updated_at.isoformat() if e.updated_at else None,
+        }
+
+    @staticmethod
+    def bootstrap_api_docs(user_id: str) -> dict:
+        """Import API-relevant docs from this repository into Knowledge OS."""
+        repo_root = Path(__file__).resolve().parents[2]
+        candidates = [
+            repo_root / "README.md",
+            repo_root / "API_TESTING.md",
+            repo_root / "DEVELOPMENT.md",
+            repo_root / "FILE_STRUCTURE.md",
+        ]
+        candidates.extend(sorted((repo_root / "backend" / "routes").glob("*.py")))
+
+        created = 0
+        updated = 0
+        scanned = 0
+
+        for path in candidates:
+            if not path.exists() or not path.is_file():
+                continue
+            try:
+                body = path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+
+            if "/api/" not in body and "Blueprint(" not in body and "@" not in body:
+                continue
+
+            scanned += 1
+            rel = str(path.relative_to(repo_root)).replace("\\", "/")
+            title = f"API Doc: {rel}"
+            compact = body[:12000]
+
+            entry = KnowledgeEntry.query.filter_by(
+                user_id=user_id,
+                title=title,
+                source="repo_api_docs",
+                is_archived=False,
+            ).first()
+
+            if entry:
+                entry.body = compact
+                entry.kind = "api_doc"
+                entry.category = "api"
+                entry.tags = "api,repo,docs"
+                entry.version = (entry.version or 1) + 1
+                updated += 1
+            else:
+                db.session.add(
+                    KnowledgeEntry(
+                        user_id=user_id,
+                        title=title,
+                        body=compact,
+                        kind="api_doc",
+                        category="api",
+                        tags="api,repo,docs",
+                        source="repo_api_docs",
+                    )
+                )
+                created += 1
+
+        db.session.commit()
+        ActivityService.log(
+            user_id=user_id,
+            message=f"Knowledge API docs sync complete: +{created} created / {updated} updated",
+            level="info",
+        )
+        return {
+            "created": created,
+            "updated": updated,
+            "scanned": scanned,
         }

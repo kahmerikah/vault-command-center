@@ -35,6 +35,19 @@ def add_property():
     return success_response(_serialize(prop), 201)
 
 
+@property_bp.post("/estimate")
+@jwt_required()
+def estimate_property():
+    data = request.json or {}
+    if not data.get("address") or not data.get("zip_code"):
+        return error_response("address and zip_code required", 400)
+    try:
+        estimate = PropertyService.estimate_value(data)
+        return success_response(estimate)
+    except ValueError as exc:
+        return error_response(str(exc), 400)
+
+
 @property_bp.get("/<property_id>")
 @jwt_required()
 def get_property(property_id):
