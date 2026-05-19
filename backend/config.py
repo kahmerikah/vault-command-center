@@ -33,5 +33,21 @@ class Config:
     SYSTEM_USERNAME = os.getenv("SYSTEM_USERNAME", "system")
     SYSTEM_EMAIL = os.getenv("SYSTEM_EMAIL", "system@localhost")
     SYSTEM_PASSWORD = os.getenv("SYSTEM_PASSWORD", "")
-    PLATFORM_GENESIS_SUPPLY = os.getenv("PLATFORM_GENESIS_SUPPLY", "1000000")
+    PLATFORM_GENESIS_SUPPLY = int(os.getenv("PLATFORM_GENESIS_SUPPLY", "1000000"))
     PASSWORD_RESET_TOKEN_EXP_SECONDS = int(os.getenv("PASSWORD_RESET_TOKEN_EXP_SECONDS", "1800"))
+    # Plaid
+    PLAID_CLIENT_ID = os.getenv("PLAID_CLIENT_ID", "")
+    PLAID_SECRET = os.getenv("PLAID_SECRET", "")
+    PLAID_ENV = os.getenv("PLAID_ENV", "sandbox")
+    # Dwolla
+    DWOLLA_KEY = os.getenv("DWOLLA_KEY", "")
+    DWOLLA_SECRET = os.getenv("DWOLLA_SECRET", "")
+    DWOLLA_ENV = os.getenv("DWOLLA_ENV", "sandbox")
+    # Property Intelligence
+    RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY", "")
+    RAPIDAPI_HOST_ZILLOW = os.getenv("RAPIDAPI_HOST_ZILLOW", "zillow-com1.p.rapidapi.com")
+    # Weather (for briefings)
+    OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY", "")
+    # Google Calendar
+    GOOGLE_CALENDAR_CLIENT_ID = os.getenv("GOOGLE_CALENDAR_CLIENT_ID", "")
+    GOOGLE_CALENDAR_CLIENT_SECRET = os.getenv("GOOGLE_CALENDAR_CLIENT_SECRET", "")

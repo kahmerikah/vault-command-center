@@ -15,6 +15,10 @@ const BlockchainPage = lazy(() => import("./pages/BlockchainPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
 const ModulesPage = lazy(() => import("./pages/ModulesPage"));
+const FinancialPage = lazy(() => import("./pages/FinancialPage"));
+const PropertyPage = lazy(() => import("./pages/PropertyPage"));
+const KnowledgePage = lazy(() => import("./pages/KnowledgePage"));
+const BriefingPage = lazy(() => import("./pages/BriefingPage"));
 
 function LockedScreen({ title }) {
   return (
@@ -177,6 +181,10 @@ export default function App() {
       <Route path="/notifications" element={<ProtectedPage element={<NotificationsPage />} />} />
       <Route path="/analytics" element={<ProtectedPage element={<AnalyticsPage />} />} />
       <Route path="/modules" element={<ProtectedPage element={<ModulesPage />} />} />
+      <Route path="/financial" element={<ProtectedPage element={<FinancialPage />} />} />
+      <Route path="/property" element={<ProtectedPage element={<PropertyPage />} />} />
+      <Route path="/knowledge" element={<ProtectedPage element={<KnowledgePage />} />} />
+      <Route path="/briefing" element={<ProtectedPage element={<BriefingPage />} />} />
 
       <Route path="/vault" element={<Navigate to="/dashboard" replace />} />
       <Route path="/chain" element={<Navigate to="/blockchain" replace />} />

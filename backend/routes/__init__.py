@@ -4,12 +4,17 @@ from backend.routes.api_gateway import gateway_bp
 from backend.routes.auth import auth_bp
 from backend.routes.blockchain import blockchain_bp
 from backend.routes.bookings import bookings_bp
+from backend.routes.briefing import briefing_bp
 from backend.routes.dashboard import dashboard_bp
+from backend.routes.financial import financial_bp
 from backend.routes.health import health_bp
-from backend.routes.ops import ops_bp
+from backend.routes.knowledge import knowledge_bp
+from backend.routes.mobile import mobile_bp
 from backend.routes.modules import modules_bp
 from backend.routes.notifications import notifications_bp
+from backend.routes.ops import ops_bp
 from backend.routes.payments import payments_bp
+from backend.routes.property import property_bp
 from backend.payments.webhooks import webhook_bp
 
 
@@ -29,5 +34,11 @@ def register_routes(app):
     app.register_blueprint(blockchain_bp, url_prefix=f"{base}/blockchain")
     app.register_blueprint(analytics_bp, url_prefix=f"{base}/analytics")
     app.register_blueprint(webhook_bp, url_prefix=f"{base}/webhooks")
+    # New OS layers
+    app.register_blueprint(financial_bp, url_prefix=f"{base}/financial")
+    app.register_blueprint(property_bp, url_prefix=f"{base}/property")
+    app.register_blueprint(knowledge_bp, url_prefix=f"{base}/knowledge")
+    app.register_blueprint(briefing_bp, url_prefix=f"{base}/briefing")
+    app.register_blueprint(mobile_bp, url_prefix=f"{base}/mobile")
 
     app.config["OAUTH_PROVIDERS"] = oauth_providers_config()

@@ -2,13 +2,17 @@ import { NavLink } from "react-router-dom";
 
 const links = [
   { label: "Dashboard", to: "/dashboard" },
-  { label: "Auth", to: "/auth" },
+  { label: "Financial OS", to: "/financial" },
+  { label: "Property Intel", to: "/property" },
+  { label: "Knowledge OS", to: "/knowledge" },
+  { label: "Briefings", to: "/briefing" },
   { label: "Payments", to: "/payments" },
   { label: "Bookings", to: "/bookings" },
   { label: "Blockchain", to: "/blockchain" },
   { label: "Notifications", to: "/notifications" },
   { label: "Analytics", to: "/analytics" },
   { label: "Modules", to: "/modules" },
+  { label: "Auth", to: "/auth" },
 ];
 
 export default function Sidebar({ onNavigate }) {
