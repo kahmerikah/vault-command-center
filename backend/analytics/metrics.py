@@ -4,7 +4,7 @@ from backend.models import AnalyticsEvent, Booking, ChainTransaction, Payment, U
 
 def dashboard_metrics():
     return {
-        "users_total": User.query.count(),
+        "users_total": User.query.filter_by(is_active=True).count(),
         "payments_total": Payment.query.count(),
         "bookings_total": Booking.query.count(),
         "chain_tx_total": ChainTransaction.query.count(),
