@@ -5,12 +5,22 @@ from backend.payments.stripe_client import StripeClient
 
 class PaymentsService:
     @staticmethod
-    def create_checkout_session(amount_cents: int, currency: str, success_url: str, cancel_url: str):
+    def create_checkout_session(
+        amount_cents: int,
+        currency: str,
+        success_url: str,
+        cancel_url: str,
+        user_id: str | None = None,
+    ):
+        metadata = {"user_id": user_id} if user_id else None
         return StripeClient().create_checkout_session(
             amount_cents=amount_cents,
             currency=currency,
             success_url=success_url,
             cancel_url=cancel_url,
+            client_reference_id=user_id,
+            metadata=metadata,
+            payment_intent_metadata=metadata,
         )
 
     @staticmethod

@@ -23,6 +23,7 @@ def create_checkout_session():
         currency=currency,
         success_url=f"{frontend}/payments/success",
         cancel_url=f"{frontend}/payments/cancel",
+        user_id=get_jwt_identity(),
     )
     return success_response({"checkout_url": session.url})
 
