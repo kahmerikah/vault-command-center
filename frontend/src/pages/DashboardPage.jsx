@@ -57,7 +57,7 @@ export default function DashboardPage() {
       const [overviewRes, modulesRes, healthRes, activityRes, terminalRes, commandRes] = await Promise.all([
         api.get("/dashboard/overview"),
         api.get("/modules"),
-        api.get("/health/health/system"),
+        api.get("/health/system"),
         api.get("/gateway/activity", {
           params: {
             page: activityPage,
@@ -121,7 +121,7 @@ export default function DashboardPage() {
 
     const healthTimer = window.setInterval(async () => {
       try {
-        const healthRes = await api.get("/health/health/system");
+        const healthRes = await api.get("/health/system");
         setHealth(healthRes.data?.data || null);
       } catch {
         // Poll fallback should never crash the page.
