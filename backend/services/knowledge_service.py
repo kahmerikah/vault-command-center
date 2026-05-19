@@ -7,6 +7,19 @@ from backend.services.activity_service import ActivityService
 
 class KnowledgeService:
     @staticmethod
+    def ensure_platform_knowledge(user_id: str) -> dict:
+        """Ensure platform docs/patterns exist for this user without manual action."""
+        existing = KnowledgeEntry.query.filter_by(
+            user_id=user_id,
+            source="repo_api_docs",
+            is_archived=False,
+        ).count()
+        if existing > 0:
+            return {"bootstrapped": False, "reason": "already_present", "entries": existing}
+        result = KnowledgeService.bootstrap_api_docs(user_id=user_id)
+        return {"bootstrapped": True, **result}
+
+    @staticmethod
     def create(user_id: str, data: dict) -> KnowledgeEntry:
         entry = KnowledgeEntry(
             user_id=user_id,
@@ -89,8 +102,15 @@ class KnowledgeService:
             repo_root / "API_TESTING.md",
             repo_root / "DEVELOPMENT.md",
             repo_root / "FILE_STRUCTURE.md",
+            repo_root / "ARCHITECTURE.md",
         ]
         candidates.extend(sorted((repo_root / "backend" / "routes").glob("*.py")))
+        candidates.extend(sorted((repo_root / "backend" / "services").glob("*.py")))
+        candidates.extend(sorted((repo_root / "backend" / "models").glob("*.py")))
+        modules_dir = repo_root / "modules"
+        if modules_dir.exists():
+            candidates.extend(sorted(modules_dir.glob("**/*.py")))
+            candidates.extend(sorted(modules_dir.glob("**/*.json")))
 
         created = 0
         updated = 0
@@ -104,7 +124,7 @@ class KnowledgeService:
             except Exception:
                 continue
 
-            if "/api/" not in body and "Blueprint(" not in body and "@" not in body:
+            if "/api/" not in body and "Blueprint(" not in body and "class " not in body and "def " not in body:
                 continue
 
             scanned += 1

@@ -3,6 +3,7 @@ from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 from backend.services.auth_service import AuthService
 from backend.models import Session, User
 from backend.services.activity_service import ActivityService
+from backend.services.knowledge_service import KnowledgeService
 from backend.utils.responses import error_response, success_response
 from backend.utils.validators import is_valid_email, normalize_email
 
@@ -54,6 +55,12 @@ def login():
         actor_id=payload["user"].id,
         meta={"ip": request.remote_addr or ""},
     )
+
+    # Auto-index platform docs/patterns so Knowledge OS is ready without manual import clicks.
+    try:
+        KnowledgeService.ensure_platform_knowledge(user_id=payload["user"].id)
+    except Exception:
+        pass
 
     return success_response(
         {

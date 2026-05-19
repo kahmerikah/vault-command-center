@@ -9,6 +9,7 @@ from backend.routes import register_routes
 from backend.services.auth_service import AuthService
 from backend.services.blockchain_service import BlockchainService
 from backend.services.module_registry import ModuleRegistry
+from backend.services.knowledge_service import KnowledgeService
 from backend.sockets.events import register_socket_events
 from backend.utils.logger import configure_logging
 
@@ -58,6 +59,11 @@ def create_app() -> Flask:
                 system_user_id=system_user.id,
                 genesis_supply=app.config["PLATFORM_GENESIS_SUPPLY"],
             )
+            # Keep canonical platform knowledge/patterns indexed for reuse.
+            try:
+                KnowledgeService.ensure_platform_knowledge(user_id=system_user.id)
+            except Exception:
+                app.logger.warning("Knowledge bootstrap skipped during app init", exc_info=True)
 
     ModuleRegistry(app).bootstrap_from_manifests("modules")
     register_routes(app)
