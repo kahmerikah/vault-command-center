@@ -1,9 +1,10 @@
 from decimal import Decimal
+from datetime import datetime
 
 from flask import Blueprint, current_app, request
 import stripe
 from backend.extensions import db
-from backend.models import Payment, User
+from backend.models import Payment, User, WebhookEvent
 from backend.services.activity_service import ActivityService
 from backend.utils.responses import error_response, success_response
 
@@ -165,7 +166,26 @@ def stripe_webhook():
     except Exception:
         return error_response("invalid webhook", 400)
 
+    event_id = event.get("id")
     event_type = event.get("type")
+
+    existing = WebhookEvent.query.filter_by(provider="stripe", event_id=event_id).first()
+    if existing and existing.status == "processed":
+        return success_response({"received": True, "event_type": event_type, "already_processed": True})
+
+    webhook_event = existing or WebhookEvent(
+        provider="stripe",
+        event_id=event_id,
+        event_type=event_type or "unknown",
+        livemode=bool(event.get("livemode", False)),
+        status="received",
+        payload=event,
+    )
+    webhook_event.event_type = event_type or webhook_event.event_type
+    webhook_event.payload = event
+    webhook_event.livemode = bool(event.get("livemode", webhook_event.livemode))
+    webhook_event.error_message = None
+    db.session.add(webhook_event)
 
     try:
         if event_type == "checkout.session.completed":
@@ -183,13 +203,19 @@ def stripe_webhook():
         }:
             _handle_refund_or_dispute(event_type, event)
     except ValueError as exc:
+        webhook_event.status = "error"
+        webhook_event.error_message = str(exc)
         db.session.rollback()
+        db.session.add(webhook_event)
+        db.session.commit()
         return error_response(str(exc), 400)
 
+    webhook_event.status = "processed"
+    webhook_event.processed_at = datetime.utcnow()
     db.session.commit()
     ActivityService.log(
         message=f"Stripe webhook processed: {event_type}",
         level="info",
-        meta={"event_type": event_type},
+        meta={"event_type": event_type, "event_id": event_id},
     )
     return success_response({"received": True, "event_type": event_type})

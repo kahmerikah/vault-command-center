@@ -9,6 +9,7 @@ from backend.models.payment import Payment, Subscription
 from backend.models.rbac import Permission, Role
 from backend.models.session import Session
 from backend.models.user import User
+from backend.models.webhook_event import WebhookEvent
 
 __all__ = [
     "ActivityLog",
@@ -26,4 +27,5 @@ __all__ = [
     "Subscription",
     "User",
     "Wallet",
+    "WebhookEvent",
 ]

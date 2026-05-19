@@ -2,9 +2,11 @@ from time import time
 
 from flask import Blueprint
 from sqlalchemy import text
+from flask import current_app
 from backend.extensions import db
 from backend.models import ActivityLog
 from backend.sockets.events import socket_health
+from backend.services.container_metrics_service import ContainerMetricsService
 import redis
 from backend.utils.responses import success_response
 
@@ -27,9 +29,11 @@ def system_health():
         db_ok = False
 
     try:
-        redis.from_url("redis://redis:6379/0").ping()
+        redis.from_url(current_app.config.get("REDIS_URL", "redis://redis:6379/0")).ping()
     except Exception:
         redis_ok = False
+
+    container_metrics = ContainerMetricsService.collect()
 
     return success_response(
         {
@@ -42,5 +46,11 @@ def system_health():
             },
             "uptime_hint": int(time()),
             "api_calls_total": ActivityLog.query.filter(ActivityLog.message.like("API call %")).count(),
+            "containers": container_metrics,
         }
     )
+
+
+@health_bp.get("/health/containers")
+def containers_health():
+    return success_response(ContainerMetricsService.collect())

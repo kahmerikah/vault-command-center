@@ -19,6 +19,7 @@ export default function DashboardPage() {
   const [activityPage, setActivityPage] = useState(1);
   const [activityLevel, setActivityLevel] = useState("");
   const [terminalLines, setTerminalLines] = useState([]);
+  const [terminalCommands, setTerminalCommands] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const handleLogout = async () => {
@@ -53,7 +54,7 @@ export default function DashboardPage() {
     setLoading(true);
 
     try {
-      const [overviewRes, modulesRes, healthRes, activityRes] = await Promise.all([
+      const [overviewRes, modulesRes, healthRes, activityRes, terminalRes, commandRes] = await Promise.all([
         api.get("/dashboard/overview"),
         api.get("/modules"),
         api.get("/health/health/system"),
@@ -64,6 +65,8 @@ export default function DashboardPage() {
             level: activityLevel || undefined,
           },
         }),
+        api.get("/ops/terminal/history", { params: { limit: 20 } }),
+        api.get("/ops/terminal/commands"),
       ]);
 
       const overview = overviewRes.data?.data || {};
@@ -74,10 +77,11 @@ export default function DashboardPage() {
       setModules(modulesRes.data?.data?.items || []);
       setHealth(healthRes.data?.data || null);
 
-      setTerminalLines((activityRes.data?.data?.items || []).slice(0, 8).map((item) => {
+      setTerminalLines((terminalRes.data?.data?.items || []).slice(0, 12).map((item) => {
         const stamp = new Date(item.created_at).toLocaleTimeString();
         return `[${item.level}] ${stamp} ${item.message}`;
       }));
+      setTerminalCommands(commandRes.data?.data?.items || []);
     } catch (error) {
       if (error?.response?.status === 401) {
         clearAuth();
@@ -102,11 +106,18 @@ export default function DashboardPage() {
       setTerminalLines((prev) => [`[${payload.level || "info"}] ${payload.message}`, ...prev].slice(0, 10));
       reload();
     };
+    const onTerminalLine = (payload) => {
+      if (!payload?.line) {
+        return;
+      }
+      setTerminalLines((prev) => [String(payload.line), ...prev].slice(0, 20));
+    };
 
     socket.on("notification:new", reload);
     socket.on("chain:transaction", reload);
     socket.on("booking:updated", reload);
     socket.on("activity:new", onActivity);
+    socket.on("terminal:line", onTerminalLine);
 
     const healthTimer = window.setInterval(async () => {
       try {
@@ -122,6 +133,7 @@ export default function DashboardPage() {
       socket.off("chain:transaction", reload);
       socket.off("booking:updated", reload);
       socket.off("activity:new", onActivity);
+      socket.off("terminal:line", onTerminalLine);
       window.clearInterval(healthTimer);
       disconnectSocket();
     };
@@ -159,7 +171,17 @@ export default function DashboardPage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <ServerHealthCard status={health?.status || "degraded"} checks={health?.checks || {}} />
-        <LiveTerminalCard lines={terminalLines} />
+        <LiveTerminalCard
+          lines={terminalLines}
+          commands={terminalCommands}
+          onDispatch={async (command) => {
+            const response = await api.post("/ops/terminal/dispatch", { command });
+            const lines = response.data?.data?.lines || [];
+            if (lines.length) {
+              setTerminalLines((prev) => [...lines.map((line) => String(line)), ...prev].slice(0, 20));
+            }
+          }}
+        />
       </div>
 
       <ModuleLauncher
