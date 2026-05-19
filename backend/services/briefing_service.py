@@ -41,16 +41,21 @@ class BriefingService:
     @staticmethod
     def morning(user_id: str, zip_code: str = "90001") -> dict:
         today = date.today()
-        upcoming_bookings = (
-            Booking.query
-            .filter_by(user_id=user_id)
-            .filter(Booking.starts_at >= datetime.utcnow())
-            .order_by(Booking.starts_at)
-            .limit(5)
-            .all()
-        )
-        unread_notifications = Notification.query.filter_by(user_id=user_id, is_read=False).count()
-        metrics = dashboard_metrics(user_id=user_id)
+        try:
+            upcoming_bookings = (
+                Booking.query
+                .filter_by(user_id=user_id)
+                .filter(Booking.starts_at >= datetime.utcnow())
+                .order_by(Booking.starts_at)
+                .limit(5)
+                .all()
+            )
+            unread_notifications = Notification.query.filter_by(user_id=user_id, is_read=False).count()
+            metrics = dashboard_metrics(user_id=user_id)
+        except Exception:
+            upcoming_bookings = []
+            unread_notifications = 0
+            metrics = {}
 
         payload = {
             "kind": "morning",
@@ -68,12 +73,12 @@ class BriefingService:
                 for b in upcoming_bookings
             ],
             "finances": {
-                "stripe_revenue": metrics.get("stripe_revenue_total"),
-                "total_payments": metrics.get("payments_count"),
+                "stripe_revenue": metrics.get("stripe_revenue_total") or 0,
+                "total_payments": metrics.get("payments_total") or 0,
             },
             "system": {
-                "active_users": metrics.get("active_users"),
-                "api_calls": metrics.get("api_calls_total"),
+                "active_users": metrics.get("users_total") or 0,
+                "api_calls": metrics.get("api_calls_total") or 0,
                 "notifications_unread": unread_notifications,
             },
             "priorities": [
@@ -84,30 +89,39 @@ class BriefingService:
         }
         payload["priorities"] = [p for p in payload["priorities"] if p]
 
-        log = BriefingLog(user_id=user_id, kind="morning", payload=payload)
-        db.session.add(log)
-        db.session.commit()
-        ActivityService.log(user_id=user_id, message="Morning briefing generated", level="info")
+        try:
+            log = BriefingLog(user_id=user_id, kind="morning", payload=payload)
+            db.session.add(log)
+            db.session.commit()
+            ActivityService.log(user_id=user_id, message="Morning briefing generated", level="info")
+        except Exception:
+            db.session.rollback()
         return payload
 
     @staticmethod
     def night(user_id: str) -> dict:
         today = date.today()
-        todays_payments = (
-            Payment.query
-            .filter(Payment.user_id == user_id)
-            .filter(db.func.date(Payment.created_at) == today)
-            .all()
-        )
-        revenue_today = sum(float(p.amount) for p in todays_payments if float(p.amount or 0) > 0)
-        metrics = dashboard_metrics(user_id=user_id)
-        recent_notifications = (
-            Notification.query
-            .filter_by(user_id=user_id)
-            .order_by(Notification.created_at.desc())
-            .limit(10)
-            .all()
-        )
+        try:
+            todays_payments = (
+                Payment.query
+                .filter(Payment.user_id == user_id)
+                .filter(db.func.date(Payment.created_at) == today)
+                .all()
+            )
+            revenue_today = sum(float(p.amount) for p in todays_payments if float(p.amount or 0) > 0)
+            metrics = dashboard_metrics(user_id=user_id)
+            recent_notifications = (
+                Notification.query
+                .filter_by(user_id=user_id)
+                .order_by(Notification.created_at.desc())
+                .limit(10)
+                .all()
+            )
+        except Exception:
+            todays_payments = []
+            revenue_today = 0
+            metrics = {}
+            recent_notifications = []
 
         payload = {
             "kind": "night",
@@ -122,7 +136,7 @@ class BriefingService:
                 for n in recent_notifications
             ],
             "system_alerts": {
-                "active_users": metrics.get("active_users"),
+                "active_users": metrics.get("users_total") or 0,
                 "error_hint": "Check logs if health checks failed",
             },
             "tomorrow_prep": {
@@ -130,8 +144,11 @@ class BriefingService:
             },
         }
 
-        log = BriefingLog(user_id=user_id, kind="night", payload=payload)
-        db.session.add(log)
-        db.session.commit()
-        ActivityService.log(user_id=user_id, message="Night briefing generated", level="info")
+        try:
+            log = BriefingLog(user_id=user_id, kind="night", payload=payload)
+            db.session.add(log)
+            db.session.commit()
+            ActivityService.log(user_id=user_id, message="Night briefing generated", level="info")
+        except Exception:
+            db.session.rollback()
         return payload

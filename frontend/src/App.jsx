@@ -78,6 +78,7 @@ export default function App() {
   const location = useLocation();
   const {
     accessToken,
+    hasHydrated,
     setAuth,
     clearAuth,
     markAuthChecked,
@@ -85,6 +86,10 @@ export default function App() {
   } = useVaultStore();
 
   useEffect(() => {
+    if (!hasHydrated) {
+      return;
+    }
+
     let mounted = true;
     const state = useVaultStore.getState();
     const currentAccessToken = state.accessToken;
@@ -137,7 +142,7 @@ export default function App() {
     return () => {
       mounted = false;
     };
-  }, [clearAuth, markAuthChecked, setAuth]);
+  }, [clearAuth, hasHydrated, markAuthChecked, setAuth]);
 
   useEffect(() => {
     const onActivity = () => touchActivity();

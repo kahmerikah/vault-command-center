@@ -67,6 +67,14 @@ def dispatch_terminal_command():
 def pull_and_sync_system():
     actor_id = get_jwt_identity()
     result = SystemSyncService.pull_and_sync_env()
+    if not result.get("ok", False):
+        ActivityService.log(
+            message="System pull-and-sync failed",
+            actor_id=actor_id,
+            level="warning",
+            meta={"error": result.get("error")},
+        )
+        return error_response(result.get("error", "pull-and-sync failed"), 400)
     ActivityService.log(
         message="System pull-and-sync executed",
         actor_id=actor_id,

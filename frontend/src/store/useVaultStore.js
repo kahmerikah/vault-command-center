@@ -12,6 +12,7 @@ export const useVaultStore = create(
       modules: [],
       dashboard: null,
       authChecked: false,
+      hasHydrated: false,
       lastActiveAt: Date.now(),
       setAuth: ({ accessToken, refreshToken, user }) =>
         set({
@@ -23,6 +24,7 @@ export const useVaultStore = create(
         }),
       touchActivity: () => set({ lastActiveAt: Date.now() }),
       markAuthChecked: () => set({ authChecked: true }),
+      setHasHydrated: (hasHydrated) => set({ hasHydrated }),
       clearAuth: () =>
         set({
           accessToken: "",
@@ -39,6 +41,11 @@ export const useVaultStore = create(
     }),
     {
       name: "somb-vault-auth",
+      onRehydrateStorage: () => (state, error) => {
+        if (!error) {
+          state?.setHasHydrated?.(true);
+        }
+      },
       partialize: (state) => ({
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,

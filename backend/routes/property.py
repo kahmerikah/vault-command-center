@@ -15,13 +15,24 @@ property_bp = Blueprint("property", __name__)
 def list_properties():
     user_id = get_jwt_identity()
     status_filter = request.args.get("status")
-    q = Property.query.filter_by(user_id=user_id)
-    if status_filter:
-        q = q.filter_by(status=status_filter)
-    q = q.order_by(Property.created_at.desc())
-    result = paginate(q, page=int(request.args.get("page", 1)), limit=int(request.args.get("limit", 20)))
-    result["items"] = [_serialize(p) for p in result["items"]]
-    return success_response(result)
+    try:
+        q = Property.query.filter_by(user_id=user_id)
+        if status_filter:
+            q = q.filter_by(status=status_filter)
+        q = q.order_by(Property.created_at.desc())
+        result = paginate(q, page=int(request.args.get("page", 1)), limit=int(request.args.get("limit", 20)))
+        result["items"] = [_serialize(p) for p in result["items"]]
+        return success_response(result)
+    except Exception as exc:
+        return success_response(
+            {
+                "items": [],
+                "total": 0,
+                "page": 1,
+                "limit": int(request.args.get("limit", 20)),
+                "warning": f"Property data unavailable: {exc}",
+            }
+        )
 
 
 @property_bp.post("")

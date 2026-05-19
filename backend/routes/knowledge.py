@@ -75,3 +75,23 @@ def bootstrap_api_docs():
     user_id = get_jwt_identity()
     result = KnowledgeService.bootstrap_api_docs(user_id=user_id)
     return success_response(result)
+
+
+@knowledge_bp.get("/pattern-registry/export")
+@jwt_required()
+def export_pattern_registry():
+    user_id = get_jwt_identity()
+    scope = (request.args.get("scope") or "global").strip().lower()
+    limit = int(request.args.get("limit", 2000))
+    result = KnowledgeService.export_pattern_registry(user_id=user_id, scope=scope, limit=limit)
+    return success_response(result)
+
+
+@knowledge_bp.post("/pattern-registry/import")
+@jwt_required()
+def import_pattern_registry():
+    user_id = get_jwt_identity()
+    payload = request.get_json(silent=True) or {}
+    merge = bool(payload.get("merge", True))
+    result = KnowledgeService.import_pattern_registry(user_id=user_id, payload=payload, merge=merge)
+    return success_response(result)

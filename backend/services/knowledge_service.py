@@ -6,6 +6,18 @@ from backend.services.activity_service import ActivityService
 
 
 class KnowledgeService:
+    REGISTRY_KINDS = {
+        "api_doc",
+        "architecture",
+        "workflow",
+        "automation",
+        "infrastructure",
+        "strategy",
+        "recipe",
+        "prompt",
+        "note",
+    }
+
     @staticmethod
     def ensure_platform_knowledge(user_id: str) -> dict:
         """Ensure platform docs/patterns exist for this user without manual action."""
@@ -170,4 +182,114 @@ class KnowledgeService:
             "created": created,
             "updated": updated,
             "scanned": scanned,
+        }
+
+    @staticmethod
+    def export_pattern_registry(user_id: str, scope: str = "global", limit: int = 2000) -> dict:
+        """Export knowledge patterns as a portable registry payload for other repos."""
+        q = KnowledgeEntry.query.filter_by(is_archived=False)
+        if scope != "global":
+            q = q.filter_by(user_id=user_id)
+
+        q = q.filter(
+            db.or_(
+                KnowledgeEntry.source.in_(["repo_api_docs", "pattern_registry", "registry_import"]),
+                KnowledgeEntry.kind.in_(list(KnowledgeService.REGISTRY_KINDS)),
+                KnowledgeEntry.category.in_(["api", "pattern", "architecture", "workflow", "automation"]),
+            )
+        ).order_by(KnowledgeEntry.updated_at.desc())
+
+        rows = q.limit(min(max(int(limit), 1), 5000)).all()
+        entries = []
+        seen = set()
+        for row in rows:
+            key = f"{(row.title or '').strip().lower()}::{row.kind or ''}::{row.category or ''}"
+            if key in seen:
+                continue
+            seen.add(key)
+            entries.append(
+                {
+                    "title": row.title,
+                    "body": row.body,
+                    "kind": row.kind,
+                    "category": row.category,
+                    "tags": [t.strip() for t in (row.tags or "").split(",") if t.strip()],
+                    "source": row.source,
+                    "version": row.version,
+                    "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+                }
+            )
+
+        return {
+            "schema_version": 1,
+            "scope": scope,
+            "count": len(entries),
+            "entries": entries,
+        }
+
+    @staticmethod
+    def import_pattern_registry(user_id: str, payload: dict, merge: bool = True) -> dict:
+        """Import registry entries into Knowledge OS with idempotent upsert behavior."""
+        entries = payload.get("entries") or []
+        created = 0
+        updated = 0
+        skipped = 0
+
+        for item in entries:
+            title = (item.get("title") or "").strip()
+            body = (item.get("body") or "").strip()
+            if not title or not body:
+                skipped += 1
+                continue
+
+            kind = (item.get("kind") or "note").strip()
+            category = (item.get("category") or "pattern").strip()
+            tags = item.get("tags") or []
+            if isinstance(tags, list):
+                tags_value = ",".join([str(t).strip() for t in tags if str(t).strip()])
+            else:
+                tags_value = str(tags)
+
+            existing = KnowledgeEntry.query.filter_by(
+                user_id=user_id,
+                title=title,
+                kind=kind,
+                category=category,
+                is_archived=False,
+            ).first()
+
+            if existing:
+                if not merge:
+                    skipped += 1
+                    continue
+                existing.body = body
+                existing.tags = tags_value
+                existing.source = "registry_import"
+                existing.version = (existing.version or 1) + 1
+                updated += 1
+            else:
+                db.session.add(
+                    KnowledgeEntry(
+                        user_id=user_id,
+                        title=title,
+                        body=body,
+                        kind=kind,
+                        category=category,
+                        tags=tags_value,
+                        source="registry_import",
+                    )
+                )
+                created += 1
+
+        db.session.commit()
+        ActivityService.log(
+            user_id=user_id,
+            message=f"Pattern registry import complete: +{created} created / {updated} updated / {skipped} skipped",
+            level="info",
+        )
+        return {
+            "created": created,
+            "updated": updated,
+            "skipped": skipped,
+            "total_received": len(entries),
         }

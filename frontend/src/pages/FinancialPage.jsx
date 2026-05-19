@@ -72,6 +72,16 @@ export default function FinancialPage() {
     } catch {}
   };
 
+  const linkBank = async () => {
+    try {
+      const res = await api.get("/financial/plaid/link-token");
+      const token = res?.data?.data?.link_token;
+      if (token) {
+        window.prompt("Plaid link token", token);
+      }
+    } catch {}
+  };
+
   const totalBalance = accounts.reduce((s, a) => s + parseFloat(a.balance_current || 0), 0);
 
   if (loading) return <div className="flex items-center justify-center h-64 font-mono text-slate-400 text-xs tracking-widest">loading financial os...</div>;
@@ -84,9 +94,9 @@ export default function FinancialPage() {
           <button type="button" onClick={syncPlaid} className="px-3 py-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 font-mono text-xs tracking-wider hover:bg-emerald-500/20 transition">
             Sync Plaid
           </button>
-          <a href="/api/v1/financial/plaid/link-token" className="px-3 py-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-400 font-mono text-xs tracking-wider hover:bg-blue-500/20 transition">
+          <button type="button" onClick={linkBank} className="px-3 py-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-400 font-mono text-xs tracking-wider hover:bg-blue-500/20 transition">
             Link Bank
-          </a>
+          </button>
         </div>
       </div>
 

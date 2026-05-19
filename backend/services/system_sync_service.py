@@ -10,41 +10,60 @@ class SystemSyncService:
     @staticmethod
     def pull_and_sync_env() -> dict:
         repo_root = Path(__file__).resolve().parents[2]
-        pull_result = SystemSyncService._git_pull(repo_root)
-        env_result = SystemSyncService._sync_env_from_example(repo_root)
-        return {
-            "repo_root": str(repo_root),
-            "git": pull_result,
-            "env_sync": env_result,
-        }
+        try:
+            pull_result = SystemSyncService._git_pull(repo_root)
+            env_result = SystemSyncService._sync_env_from_example(repo_root)
+            return {
+                "ok": True,
+                "repo_root": str(repo_root),
+                "git": pull_result,
+                "env_sync": env_result,
+            }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "repo_root": str(repo_root),
+                "error": str(exc),
+                "git": {"fetch_ok": False, "pull_ok": False},
+                "env_sync": {"ok": False},
+            }
 
     @staticmethod
     def _git_pull(repo_root: Path) -> dict:
-        fetch = subprocess.run(
-            ["git", "fetch", "origin"],
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-        )
-        pull = subprocess.run(
-            ["git", "pull", "origin", "master"],
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-        )
-        head = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-        )
-        return {
-            "fetch_ok": fetch.returncode == 0,
-            "pull_ok": pull.returncode == 0,
-            "fetch_output": (fetch.stdout + fetch.stderr).strip(),
-            "pull_output": (pull.stdout + pull.stderr).strip(),
-            "head": head.stdout.strip(),
-        }
+        try:
+            fetch = subprocess.run(
+                ["git", "fetch", "origin"],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+            )
+            pull = subprocess.run(
+                ["git", "pull", "origin", "master"],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+            )
+            head = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+            )
+            return {
+                "fetch_ok": fetch.returncode == 0,
+                "pull_ok": pull.returncode == 0,
+                "fetch_output": (fetch.stdout + fetch.stderr).strip(),
+                "pull_output": (pull.stdout + pull.stderr).strip(),
+                "head": head.stdout.strip(),
+            }
+        except FileNotFoundError:
+            return {
+                "fetch_ok": False,
+                "pull_ok": False,
+                "fetch_output": "git binary not installed in backend container",
+                "pull_output": "git binary not installed in backend container",
+                "head": "",
+            }
 
     @staticmethod
     def _sync_env_from_example(repo_root: Path) -> dict:

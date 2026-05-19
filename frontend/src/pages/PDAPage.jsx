@@ -48,6 +48,7 @@ export default function PDAPage() {
   const [zip, setZip] = useState("90001");
   const [tab, setTab] = useState("agenda");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date();
@@ -81,8 +82,9 @@ export default function PDAPage() {
   const load = async () => {
     if (!accessToken) return;
     setLoading(true);
+    setLoadError("");
     try {
-      const [bookingsRes, morningRes, nightRes, historyRes, todosRes] = await Promise.all([
+      const [bookingsRes, morningRes, nightRes, historyRes, todosRes] = await Promise.allSettled([
         api.get("/bookings", { params: { limit: 200 } }),
         api.get(`/briefing/morning?zip=${zip}`),
         api.get("/briefing/night"),
@@ -90,11 +92,17 @@ export default function PDAPage() {
         api.get("/knowledge", { params: { category: "todo", limit: 100 } }),
       ]);
 
-      setBookings(bookingsRes.data?.data?.items || []);
-      setMorning(morningRes.data?.data || null);
-      setNight(nightRes.data?.data || null);
-      setHistory(historyRes.data?.data?.items || []);
-      setTodos(todosRes.data?.data?.items || []);
+      setBookings(bookingsRes.status === "fulfilled" ? (bookingsRes.value.data?.data?.items || []) : []);
+      setMorning(morningRes.status === "fulfilled" ? (morningRes.value.data?.data || null) : null);
+      setNight(nightRes.status === "fulfilled" ? (nightRes.value.data?.data || null) : null);
+      setHistory(historyRes.status === "fulfilled" ? (historyRes.value.data?.data?.items || []) : []);
+      setTodos(todosRes.status === "fulfilled" ? (todosRes.value.data?.data?.items || []) : []);
+
+      if ([bookingsRes, morningRes, nightRes, historyRes, todosRes].some((r) => r.status === "rejected")) {
+        setLoadError("Some PDA panels could not load. Retry after backend sync.");
+      }
+    } catch (error) {
+      setLoadError(error?.response?.data?.error || "Unable to load PDA data.");
     } finally {
       setLoading(false);
     }
@@ -179,6 +187,10 @@ export default function PDAPage() {
           </button>
         </div>
       </div>
+
+      {loadError ? (
+        <div className="mb-3 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{loadError}</div>
+      ) : null}
 
       {tab === "agenda" && (
         <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
