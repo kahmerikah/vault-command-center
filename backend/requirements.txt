@@ -15,5 +15,6 @@ stripe==11.5.0
 email-validator==2.2.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
+cryptography==43.0.1
 marshmallow==3.23.1
 docker==7.1.0
