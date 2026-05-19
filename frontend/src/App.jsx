@@ -11,7 +11,6 @@ import SettingsModal from "./components/SettingsModal";
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const AuthPage = lazy(() => import("./pages/AuthPage"));
 const PaymentsPage = lazy(() => import("./pages/PaymentsPage"));
-const BookingsPage = lazy(() => import("./pages/BookingsPage"));
 const BlockchainPage = lazy(() => import("./pages/BlockchainPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
@@ -19,8 +18,7 @@ const ModulesPage = lazy(() => import("./pages/ModulesPage"));
 const FinancialPage = lazy(() => import("./pages/FinancialPage"));
 const PropertyPage = lazy(() => import("./pages/PropertyPage"));
 const KnowledgePage = lazy(() => import("./pages/KnowledgePage"));
-const BriefingPage = lazy(() => import("./pages/BriefingPage"));
-const AssistantPage = lazy(() => import("./pages/AssistantPage"));
+const PDAPage = lazy(() => import("./pages/PDAPage"));
 
 function LockedScreen({ title }) {
   return (
@@ -190,7 +188,7 @@ export default function App() {
       <Route path="/dashboard" element={<ProtectedPage element={<DashboardPage />} />} />
       <Route path="/auth" element={<ProtectedPage element={<AuthPage />} />} />
       <Route path="/payments" element={<ProtectedPage element={<PaymentsPage />} />} />
-      <Route path="/bookings" element={<ProtectedPage element={<BookingsPage />} />} />
+      <Route path="/bookings" element={<Navigate to="/pda" replace />} />
       <Route path="/blockchain" element={<ProtectedPage element={<BlockchainPage />} />} />
       <Route path="/notifications" element={<ProtectedPage element={<NotificationsPage />} />} />
       <Route path="/analytics" element={<ProtectedPage element={<AnalyticsPage />} />} />
@@ -198,8 +196,9 @@ export default function App() {
       <Route path="/financial" element={<ProtectedPage element={<FinancialPage />} />} />
       <Route path="/property" element={<ProtectedPage element={<PropertyPage />} />} />
       <Route path="/knowledge" element={<ProtectedPage element={<KnowledgePage />} />} />
-      <Route path="/briefing" element={<ProtectedPage element={<BriefingPage />} />} />
-      <Route path="/assistant" element={<ProtectedPage element={<AssistantPage />} />} />
+      <Route path="/briefing" element={<Navigate to="/pda" replace />} />
+      <Route path="/assistant" element={<Navigate to="/pda" replace />} />
+      <Route path="/pda" element={<ProtectedPage element={<PDAPage />} />} />
 
       <Route path="/vault" element={<Navigate to="/dashboard" replace />} />
       <Route path="/chain" element={<Navigate to="/blockchain" replace />} />

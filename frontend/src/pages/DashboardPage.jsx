@@ -146,7 +146,7 @@ export default function DashboardPage() {
       { label: "Active Users", value: metrics.users_total, hint: "Active account count", to: "/auth" },
       { label: "Sessions", value: metrics.sessions_total, hint: "Authenticated sessions", to: "/auth" },
       { label: "Payments", value: metrics.payments_total, hint: "Stripe transactions", to: "/payments" },
-      { label: "Bookings", value: metrics.bookings_total, hint: "Scheduling layer", to: "/bookings" },
+      { label: "PDA", value: metrics.bookings_total, hint: "Personal assistant layer", to: "/pda" },
       { label: "Chain TX", value: metrics.chain_tx_total, hint: "Blockchain rail", tone: "warning", to: "/blockchain" },
       { label: "Notifications", value: metrics.notifications_unread, hint: "Unread alerts", tone: "danger", to: "/notifications" },
       { label: "Modules", value: metrics.module_count, hint: "Enabled modules", to: "/modules" },
