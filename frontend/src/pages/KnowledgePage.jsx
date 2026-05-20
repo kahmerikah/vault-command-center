@@ -28,6 +28,7 @@ export default function KnowledgePage() {
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ title: "", body: "", kind: "note", category: "", tags: "" });
   const [page, setPage] = useState(1);
+  const [actionError, setActionError] = useState("");
 
   const load = useCallback(async (q = search, kind = filterKind, p = page) => {
     if (!accessToken) return;
@@ -48,24 +49,37 @@ export default function KnowledgePage() {
 
   const addEntry = async (e) => {
     e.preventDefault();
+    setActionError("");
     try {
       await api.post("/knowledge", form);
       setShowAdd(false);
       setForm({ title: "", body: "", kind: "note", category: "", tags: "" });
-      load();
-    } catch {}
+      await load();
+    } catch (err) {
+      setActionError(err?.response?.data?.error || "Unable to save entry.");
+    }
   };
 
   const archiveEntry = async (id) => {
-    await api.delete(`/knowledge/${id}`);
-    setSelected(null);
-    load();
+    setActionError("");
+    try {
+      await api.delete(`/knowledge/${id}`);
+      setSelected(null);
+      await load();
+    } catch (err) {
+      setActionError(err?.response?.data?.error || "Unable to archive entry.");
+    }
   };
 
   const togglePin = async (entry) => {
-    await api.patch(`/knowledge/${entry.id}`, { is_pinned: !entry.is_pinned });
-    load();
-    if (selected?.id === entry.id) setSelected(s => ({ ...s, is_pinned: !entry.is_pinned }));
+    setActionError("");
+    try {
+      await api.patch(`/knowledge/${entry.id}`, { is_pinned: !entry.is_pinned });
+      await load();
+      if (selected?.id === entry.id) setSelected(s => ({ ...s, is_pinned: !entry.is_pinned }));
+    } catch (err) {
+      setActionError(err?.response?.data?.error || "Unable to update pin state.");
+    }
   };
 
   return (
@@ -92,6 +106,8 @@ export default function KnowledgePage() {
           {KINDS.map(k => <option key={k} value={k}>{k}</option>)}
         </select>
       </div>
+
+      {actionError ? <div className="text-xs font-mono text-red-300">{actionError}</div> : null}
 
       {showAdd && (
         <GlassPanel>

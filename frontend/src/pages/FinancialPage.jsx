@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { usePlaidLink } from "react-plaid-link";
 import api, { setAuthToken } from "../lib/api";
 import { useVaultStore } from "../store/useVaultStore";
 import GlassPanel from "../components/GlassPanel";
@@ -18,6 +19,10 @@ export default function FinancialPage() {
   const [routeResult, setRouteResult] = useState(null);
   const [plaidStatus, setPlaidStatus] = useState("");
   const [plaidError, setPlaidError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [linkToken, setLinkToken] = useState("");
+  const [linkLoading, setLinkLoading] = useState(false);
+  const [exchangingToken, setExchangingToken] = useState(false);
 
   const load = useCallback(async () => {
     if (!accessToken) return;
@@ -45,61 +50,117 @@ export default function FinancialPage() {
 
   const addRule = async (e) => {
     e.preventDefault();
+    setActionError("");
     try {
       await api.post("/financial/allocation-rules", ruleForm);
       setShowAddRule(false);
       setRuleForm({ name: "", destination_tag: "", allocation_pct: "", trigger: "income_received", priority: 50 });
-      load();
-    } catch {}
+      await load();
+    } catch (err) {
+      setActionError(err?.response?.data?.error || "Unable to save rule.");
+    }
   };
 
   const toggleRule = async (rule) => {
-    await api.patch(`/financial/allocation-rules/${rule.id}`, { is_active: !rule.is_active });
-    load();
+    setActionError("");
+    try {
+      await api.patch(`/financial/allocation-rules/${rule.id}`, { is_active: !rule.is_active });
+      await load();
+    } catch (err) {
+      setActionError(err?.response?.data?.error || "Unable to update rule state.");
+    }
   };
 
   const runRouter = async (e) => {
     e.preventDefault();
+    setActionError("");
     try {
       const res = await api.post("/financial/route", routeForm);
       setRouteResult(res.data?.data);
-      load();
-    } catch {}
+      await load();
+    } catch (err) {
+      setActionError(err?.response?.data?.error || "Unable to run router simulation.");
+    }
   };
 
   const syncPlaid = async () => {
     try {
+      setPlaidStatus("Syncing Plaid transactions...");
       await api.post("/financial/plaid/sync", { days: 30 });
       setPlaidError("");
       setPlaidStatus("Plaid sync complete.");
-      load();
+      await load();
     } catch (err) {
       setPlaidStatus("");
       setPlaidError(err?.response?.data?.error || "Plaid sync failed.");
     }
   };
 
+  const onPlaidSuccess = async (publicToken) => {
+    setExchangingToken(true);
+    try {
+      setPlaidError("");
+      setPlaidStatus("Exchanging Plaid token...");
+      await api.post("/financial/plaid/exchange", { public_token: publicToken });
+      setPlaidStatus("Bank linked. Refreshing balances and transactions...");
+      await api.post("/financial/plaid/sync", { days: 30 });
+      await api.post("/financial/plaid/refresh-balances", {});
+      await load();
+      setPlaidStatus("Bank linked successfully.");
+    } catch (err) {
+      setPlaidStatus("");
+      setPlaidError(err?.response?.data?.error || "Bank link token exchange failed.");
+    } finally {
+      setExchangingToken(false);
+      setLinkToken("");
+    }
+  };
+
+  const onPlaidExit = (err) => {
+    if (!err) {
+      return;
+    }
+    setPlaidStatus("");
+    setPlaidError(err.error_message || "Plaid flow exited with an error.");
+  };
+
+  const { open: openPlaid, ready: plaidReady } = usePlaidLink({
+    token: linkToken || null,
+    onSuccess: onPlaidSuccess,
+    onExit: onPlaidExit,
+  });
+
   const linkBank = async () => {
+    if (linkLoading || exchangingToken) {
+      return;
+    }
+    setLinkLoading(true);
     try {
       setPlaidStatus("");
       setPlaidError("");
+      setPlaidStatus("Creating Plaid link token...");
       const res = await api.get("/financial/plaid/link-token");
       const token = res?.data?.data?.link_token;
       if (token) {
-        if (navigator?.clipboard?.writeText) {
-          await navigator.clipboard.writeText(token);
-          setPlaidStatus("Link token created and copied to clipboard.");
-        } else {
-          setPlaidStatus(`Link token created: ${token}`);
-        }
+        setLinkToken(token);
+        setPlaidStatus("Link token created. Opening Plaid...");
       } else {
+        setPlaidStatus("");
         setPlaidError("Link token endpoint returned no token.");
       }
     } catch (err) {
       setPlaidStatus("");
       setPlaidError(err?.response?.data?.error || "Unable to create Plaid link token.");
+    } finally {
+      setLinkLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (linkToken && plaidReady && !linkLoading && !exchangingToken) {
+      openPlaid();
+    }
+  }, [linkToken, plaidReady, linkLoading, exchangingToken, openPlaid]);
 
   const totalBalance = accounts.reduce((s, a) => s + parseFloat(a.balance_current || 0), 0);
 
@@ -113,14 +174,20 @@ export default function FinancialPage() {
           <button type="button" onClick={syncPlaid} className="px-3 py-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 font-mono text-xs tracking-wider hover:bg-emerald-500/20 transition">
             Sync Plaid
           </button>
-          <button type="button" onClick={linkBank} className="px-3 py-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-400 font-mono text-xs tracking-wider hover:bg-blue-500/20 transition">
-            Link Bank
+          <button
+            type="button"
+            onClick={linkBank}
+            disabled={linkLoading || exchangingToken}
+            className="px-3 py-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-400 font-mono text-xs tracking-wider hover:bg-blue-500/20 transition disabled:opacity-50"
+          >
+            {linkLoading ? "Preparing..." : exchangingToken ? "Linking..." : "Link Bank"}
           </button>
         </div>
       </div>
 
       {plaidStatus ? <div className="text-xs font-mono text-emerald-300">{plaidStatus}</div> : null}
       {plaidError ? <div className="text-xs font-mono text-red-300">{plaidError}</div> : null}
+      {actionError ? <div className="text-xs font-mono text-red-300">{actionError}</div> : null}
 
       {/* KPI Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

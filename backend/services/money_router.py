@@ -91,7 +91,7 @@ class MoneyRouter:
 
         if events:
             ActivityService.log(
-                user_id=self.user_id,
+                actor_id=self.user_id,
                 message=f"Money routing run: {len(events)} rules evaluated for trigger={trigger}",
                 level="info",
             )

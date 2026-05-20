@@ -20,7 +20,12 @@ financial_bp = Blueprint("financial", __name__)
 @jwt_required()
 def plaid_link_token():
     user_id = get_jwt_identity()
-    return success_response(PlaidService.create_link_token(user_id))
+    result = PlaidService.create_link_token(user_id)
+    if result.get("error"):
+        return error_response(result.get("error"), 502)
+    if not result.get("link_token"):
+        return error_response("Plaid response missing link token", 502)
+    return success_response(result)
 
 
 @financial_bp.post("/plaid/exchange")
@@ -31,7 +36,10 @@ def plaid_exchange():
     public_token = data.get("public_token")
     if not public_token:
         return error_response("public_token required", 400)
-    return success_response(PlaidService.exchange_public_token(user_id, public_token))
+    result = PlaidService.exchange_public_token(user_id, public_token)
+    if result.get("error"):
+        return error_response(result.get("error"), 502)
+    return success_response(result)
 
 
 @financial_bp.post("/plaid/sync")
@@ -40,6 +48,8 @@ def plaid_sync():
     user_id = get_jwt_identity()
     days = int((request.json or {}).get("days", 30))
     result = PlaidService.sync_transactions(user_id, days=days)
+    if result.get("error"):
+        return error_response(result.get("error"), 502)
     return success_response(result)
 
 
@@ -47,7 +57,10 @@ def plaid_sync():
 @jwt_required()
 def plaid_refresh_balances():
     user_id = get_jwt_identity()
-    return success_response({"results": PlaidService.refresh_balances(user_id)})
+    results = PlaidService.refresh_balances(user_id)
+    if isinstance(results, dict) and results.get("error"):
+        return error_response(results.get("error"), 502)
+    return success_response({"results": results})
 
 
 # ── Accounts ───────────────────────────────────────────────────────────────

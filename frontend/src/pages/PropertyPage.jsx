@@ -26,6 +26,7 @@ export default function PropertyPage() {
     address: "", zip_code: "", city: "", state: "",
     property_type: "single_family", listing_price: "", bedrooms: "", bathrooms: "", sqft: "", notes: "",
   });
+  const [actionError, setActionError] = useState("");
 
   const load = useCallback(async () => {
     if (!accessToken) return;
@@ -44,28 +45,37 @@ export default function PropertyPage() {
   useEffect(() => { load(); }, [load]);
 
   const openProperty = async (id) => {
+    setActionError("");
     try {
       const res = await api.get(`/property/${id}`);
       setSelected(res.data?.data);
-    } catch {}
+    } catch (err) {
+      setActionError(err?.response?.data?.error || "Unable to open property details.");
+    }
   };
 
   const addProperty = async (e) => {
     e.preventDefault();
+    setActionError("");
     try {
       await api.post("/property", form);
       setShowAdd(false);
       setForm({ address: "", zip_code: "", city: "", state: "", property_type: "single_family", listing_price: "", bedrooms: "", bathrooms: "", sqft: "", notes: "" });
-      load();
-    } catch {}
+      await load();
+    } catch (err) {
+      setActionError(err?.response?.data?.error || "Unable to add property.");
+    }
   };
 
   const reAnalyze = async (id) => {
+    setActionError("");
     try {
       const res = await api.post(`/property/${id}/analyze`);
       setSelected(res.data?.data);
-      load();
-    } catch {}
+      await load();
+    } catch (err) {
+      setActionError(err?.response?.data?.error || "Unable to re-analyze property.");
+    }
   };
 
   const updateStatus = async (id, status) => {
@@ -81,8 +91,9 @@ export default function PropertyPage() {
     try {
       const res = await api.post("/property/estimate", estimateForm);
       setEstimate(res.data?.data || null);
-    } catch {
+    } catch (err) {
       setEstimate(null);
+      setActionError(err?.response?.data?.error || "Unable to estimate value.");
     }
   };
 
@@ -96,6 +107,8 @@ export default function PropertyPage() {
           + Add Property
         </button>
       </div>
+
+      {actionError ? <div className="text-xs font-mono text-red-300">{actionError}</div> : null}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <MetricCard label="Tracked" value={properties.length} status="ok" />
