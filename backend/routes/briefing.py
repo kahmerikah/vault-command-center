@@ -17,7 +17,17 @@ def morning_briefing():
         payload = BriefingService.morning(user_id=user_id, zip_code=zip_code)
         return success_response(payload)
     except Exception as exc:
-        return error_response(f"Morning briefing failed: {exc}", 500)
+        return success_response(
+            {
+                "kind": "morning",
+                "date": None,
+                "weather": {"error": str(exc)},
+                "calendar": [],
+                "priorities": [],
+                "system": {"notifications_unread": 0, "api_calls": 0, "active_users": 0},
+                "warning": f"Morning briefing degraded: {exc}",
+            }
+        )
 
 
 @briefing_bp.get("/night")
@@ -28,19 +38,28 @@ def night_briefing():
         payload = BriefingService.night(user_id=user_id)
         return success_response(payload)
     except Exception as exc:
-        return error_response(f"Night briefing failed: {exc}", 500)
+        return success_response(
+            {
+                "kind": "night",
+                "date": None,
+                "spending_summary": {"revenue_today": 0, "total_payments_today": 0},
+                "notifications_today": [],
+                "system_alerts": {"active_users": 0},
+                "warning": f"Night briefing degraded: {exc}",
+            }
+        )
 
 
 @briefing_bp.get("/history")
 @jwt_required()
 def briefing_history():
     user_id = get_jwt_identity()
-    kind = request.args.get("kind")
-    q = BriefingLog.query.filter_by(user_id=user_id)
-    if kind:
-        q = q.filter_by(kind=kind)
-    logs = q.order_by(BriefingLog.created_at.desc()).limit(30).all()
     try:
+        kind = request.args.get("kind")
+        q = BriefingLog.query.filter_by(user_id=user_id)
+        if kind:
+            q = q.filter_by(kind=kind)
+        logs = q.order_by(BriefingLog.created_at.desc()).limit(30).all()
         return success_response({
             "items": [
                 {
@@ -53,7 +72,7 @@ def briefing_history():
             ]
         })
     except Exception as exc:
-        return error_response(f"Briefing history unavailable: {exc}", 500)
+        return success_response({"items": [], "warning": f"Briefing history unavailable: {exc}"})
 
 
 # ── Mobile-friendly endpoint (API key auth for iPhone Shortcuts widget) ────

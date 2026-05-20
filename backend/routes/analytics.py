@@ -24,10 +24,13 @@ def create_event():
 @analytics_bp.get("/summary")
 @jwt_required()
 def summary():
+    api_calls_query = ActivityLog.query.filter(ActivityLog.message.like("API call %"))
+    api_calls_query = api_calls_query.filter(~ActivityLog.message.like("API call % /api/v1/ops/%"))
+    api_calls_query = api_calls_query.filter(~ActivityLog.message.like("API call % /api/ops/%"))
     return success_response(
         {
             "events_total": AnalyticsEvent.query.count(),
-            "api_calls_total": ActivityLog.query.filter(ActivityLog.message.like("API call %")).count(),
+            "api_calls_total": api_calls_query.count(),
             "active_sessions": Session.query.filter_by(is_revoked=False).count(),
             "failed_auth_total": ActivityLog.query.filter(ActivityLog.message.like("Failed login%")).count(),
         }

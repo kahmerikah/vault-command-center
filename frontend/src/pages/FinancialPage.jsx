@@ -16,6 +16,8 @@ export default function FinancialPage() {
   const [ruleForm, setRuleForm] = useState({ name: "", destination_tag: "", allocation_pct: "", trigger: "income_received", priority: 50 });
   const [routeForm, setRouteForm] = useState({ income_amount: "", trigger: "income_received" });
   const [routeResult, setRouteResult] = useState(null);
+  const [plaidStatus, setPlaidStatus] = useState("");
+  const [plaidError, setPlaidError] = useState("");
 
   const load = useCallback(async () => {
     if (!accessToken) return;
@@ -68,18 +70,35 @@ export default function FinancialPage() {
   const syncPlaid = async () => {
     try {
       await api.post("/financial/plaid/sync", { days: 30 });
+      setPlaidError("");
+      setPlaidStatus("Plaid sync complete.");
       load();
-    } catch {}
+    } catch (err) {
+      setPlaidStatus("");
+      setPlaidError(err?.response?.data?.error || "Plaid sync failed.");
+    }
   };
 
   const linkBank = async () => {
     try {
+      setPlaidStatus("");
+      setPlaidError("");
       const res = await api.get("/financial/plaid/link-token");
       const token = res?.data?.data?.link_token;
       if (token) {
-        window.prompt("Plaid link token", token);
+        if (navigator?.clipboard?.writeText) {
+          await navigator.clipboard.writeText(token);
+          setPlaidStatus("Link token created and copied to clipboard.");
+        } else {
+          setPlaidStatus(`Link token created: ${token}`);
+        }
+      } else {
+        setPlaidError("Link token endpoint returned no token.");
       }
-    } catch {}
+    } catch (err) {
+      setPlaidStatus("");
+      setPlaidError(err?.response?.data?.error || "Unable to create Plaid link token.");
+    }
   };
 
   const totalBalance = accounts.reduce((s, a) => s + parseFloat(a.balance_current || 0), 0);
@@ -99,6 +118,9 @@ export default function FinancialPage() {
           </button>
         </div>
       </div>
+
+      {plaidStatus ? <div className="text-xs font-mono text-emerald-300">{plaidStatus}</div> : null}
+      {plaidError ? <div className="text-xs font-mono text-red-300">{plaidError}</div> : null}
 
       {/* KPI Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
