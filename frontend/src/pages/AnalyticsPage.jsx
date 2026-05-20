@@ -29,9 +29,9 @@ export default function AnalyticsPage() {
   useEffect(() => {
     const load = async () => {
       setAuthToken(accessToken);
-      const [summaryRes, timelineRes] = await Promise.all([api.get("/analytics/summary"), api.get("/analytics/timeline")]);
-      setSummary(summaryRes.data?.data || null);
-      setTimeline(timelineRes.data?.data?.points || []);
+      const [summaryRes, timelineRes] = await Promise.allSettled([api.get("/analytics/summary"), api.get("/analytics/timeline")]);
+      setSummary(summaryRes.status === 'fulfilled' ? summaryRes.value.data?.data || null : null);
+      setTimeline(timelineRes.status === 'fulfilled' ? timelineRes.value.data?.data?.points || [] : []);
     };
 
     if (accessToken) {

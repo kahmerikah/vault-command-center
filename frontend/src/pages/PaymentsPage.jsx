@@ -28,9 +28,9 @@ export default function PaymentsPage() {
   useEffect(() => {
     const load = async () => {
       setAuthToken(accessToken);
-      const [summaryRes, paymentsRes] = await Promise.all([api.get("/payments/summary"), api.get("/payments", { params: { limit: 50 } })]);
-      setSummary(summaryRes.data?.data || null);
-      setPayments(paymentsRes.data?.data?.items || []);
+      const [summaryRes, paymentsRes] = await Promise.allSettled([api.get("/payments/summary"), api.get("/payments", { params: { limit: 50 } })]);
+      setSummary(summaryRes.status === 'fulfilled' ? summaryRes.value.data?.data || null : null);
+      setPayments(paymentsRes.status === 'fulfilled' ? paymentsRes.value.data?.data?.items || [] : []);
     };
 
     if (accessToken) {

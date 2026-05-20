@@ -54,7 +54,7 @@ export default function DashboardPage() {
     setLoading(true);
 
     try {
-      const [overviewRes, modulesRes, healthRes, activityRes, terminalRes, commandRes] = await Promise.all([
+      const [overviewRes, modulesRes, healthRes, activityRes, terminalRes, commandRes] = await Promise.allSettled([
         api.get("/dashboard/overview"),
         api.get("/modules"),
         api.get("/health/system"),
@@ -69,19 +69,19 @@ export default function DashboardPage() {
         api.get("/ops/terminal/commands"),
       ]);
 
-      const overview = overviewRes.data?.data || {};
-      overview.activity = activityRes.data?.data?.items || overview.activity || [];
-      overview.activity_pagination = activityRes.data?.data?.pagination || null;
+      const overview = overviewRes.status === 'fulfilled' ? overviewRes.value.data?.data || {} : {};
+      overview.activity = activityRes.status === 'fulfilled' ? activityRes.value.data?.data?.items || overview.activity || [] : overview.activity || [];
+      overview.activity_pagination = activityRes.status === 'fulfilled' ? activityRes.value.data?.data?.pagination || null : null;
 
       setDashboard(overview);
-      setModules(modulesRes.data?.data?.items || []);
-      setHealth(healthRes.data?.data || null);
+      setModules(modulesRes.status === 'fulfilled' ? modulesRes.value.data?.data?.items || [] : []);
+      setHealth(healthRes.status === 'fulfilled' ? healthRes.value.data?.data || null : null);
 
-      setTerminalLines((terminalRes.data?.data?.items || []).slice(0, 12).map((item) => {
+      setTerminalLines((terminalRes.status === 'fulfilled' ? terminalRes.value.data?.data?.items || [] : []).slice(0, 12).map((item) => {
         const stamp = new Date(item.created_at).toLocaleTimeString();
         return `[${item.level}] ${stamp} ${item.message}`;
       }));
-      setTerminalCommands(commandRes.data?.data?.items || []);
+      setTerminalCommands(commandRes.status === 'fulfilled' ? commandRes.value.data?.data?.items || [] : []);
     } catch (error) {
       if (error?.response?.status === 401) {
         clearAuth();

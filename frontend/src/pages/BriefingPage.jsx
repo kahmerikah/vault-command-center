@@ -33,9 +33,9 @@ export default function BriefingPage() {
         api.get("/briefing/night"),
         api.get("/briefing/history?limit=10"),
       ]);
-      setMorning(morningRes.data?.data);
-      setNight(nightRes.data?.data);
-      setHistory(histRes.data?.data?.items || []);
+      setMorning(morningRes.status === 'fulfilled' ? morningRes.value.data?.data : null);
+      setNight(nightRes.status === 'fulfilled' ? nightRes.value.data?.data : null);
+      setHistory(histRes.status === 'fulfilled' ? histRes.value.data?.data?.items || [] : []);
     } catch (err) {
       if (err?.response?.status === 401) clearAuth();
     } finally {

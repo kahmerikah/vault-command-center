@@ -28,9 +28,9 @@ export default function BlockchainPage() {
   useEffect(() => {
     const load = async () => {
       setAuthToken(accessToken);
-      const [metricsRes, txRes] = await Promise.all([api.get("/blockchain/metrics"), api.get("/blockchain/transactions", { params: { limit: 50 } })]);
-      setMetrics(metricsRes.data?.data || null);
-      setTransactions(txRes.data?.data?.items || []);
+      const [metricsRes, txRes] = await Promise.allSettled([api.get("/blockchain/metrics"), api.get("/blockchain/transactions", { params: { limit: 50 } })]);
+      setMetrics(metricsRes.status === 'fulfilled' ? metricsRes.value.data?.data || null : null);
+      setTransactions(txRes.status === 'fulfilled' ? txRes.value.data?.data?.items || [] : []);
     };
 
     if (accessToken) {

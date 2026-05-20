@@ -32,14 +32,14 @@ export default function AssistantPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const [bookingsRes, morningRes, todoRes] = await Promise.all([
+      const [bookingsRes, morningRes, todoRes] = await Promise.allSettled([
         api.get("/bookings", { params: { limit: 50 } }),
         api.get(`/briefing/morning?zip=${zip}`),
         api.get("/knowledge", { params: { category: "todo", limit: 50 } }),
       ]);
-      setBookings((bookingsRes.data?.data?.items || []).filter((b) => b.status !== "completed"));
-      setMorning(morningRes.data?.data || null);
-      setTodos(todoRes.data?.data?.items || []);
+      setBookings(bookingsRes.status === 'fulfilled' ? (bookingsRes.value.data?.data?.items || []).filter((b) => b.status !== "completed") : []);
+      setMorning(morningRes.status === 'fulfilled' ? morningRes.value.data?.data || null : null);
+      setTodos(todoRes.status === 'fulfilled' ? todoRes.value.data?.data?.items || [] : []);
     } finally {
       setLoading(false);
     }

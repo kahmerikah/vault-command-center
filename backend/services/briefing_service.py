@@ -93,7 +93,7 @@ class BriefingService:
             log = BriefingLog(user_id=user_id, kind="morning", payload=payload)
             db.session.add(log)
             db.session.commit()
-            ActivityService.log(user_id=user_id, message="Morning briefing generated", level="info")
+            ActivityService.log(actor_id=user_id, message="Morning briefing generated", level="info")
         except Exception:
             db.session.rollback()
         return payload
@@ -148,7 +148,7 @@ class BriefingService:
             log = BriefingLog(user_id=user_id, kind="night", payload=payload)
             db.session.add(log)
             db.session.commit()
-            ActivityService.log(user_id=user_id, message="Night briefing generated", level="info")
+            ActivityService.log(actor_id=user_id, message="Night briefing generated", level="info")
         except Exception:
             db.session.rollback()
         return payload

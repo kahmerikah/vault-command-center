@@ -45,7 +45,7 @@ class KnowledgeService:
         )
         db.session.add(entry)
         db.session.commit()
-        ActivityService.log(user_id=user_id, message=f"Knowledge entry created: {entry.title}", level="info")
+        ActivityService.log(actor_id=user_id, message=f"Knowledge entry created: {entry.title}", level="info")
         return entry
 
     @staticmethod
@@ -174,7 +174,7 @@ class KnowledgeService:
 
         db.session.commit()
         ActivityService.log(
-            user_id=user_id,
+            actor_id=user_id,
             message=f"Knowledge API docs sync complete: +{created} created / {updated} updated",
             level="info",
         )
@@ -283,7 +283,7 @@ class KnowledgeService:
 
         db.session.commit()
         ActivityService.log(
-            user_id=user_id,
+            actor_id=user_id,
             message=f"Pattern registry import complete: +{created} created / {updated} updated / {skipped} skipped",
             level="info",
         )

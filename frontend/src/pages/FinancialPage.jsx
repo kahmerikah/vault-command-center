@@ -24,16 +24,16 @@ export default function FinancialPage() {
     setAuthToken(accessToken);
     setLoading(true);
     try {
-      const [accRes, rulesRes, txRes, routingRes] = await Promise.all([
+      const [accRes, rulesRes, txRes, routingRes] = await Promise.allSettled([
         api.get("/financial/accounts"),
         api.get("/financial/allocation-rules"),
         api.get("/financial/transactions?limit=30"),
         api.get("/financial/routing-history?limit=20"),
       ]);
-      setAccounts(accRes.data?.data?.items || []);
-      setRules(rulesRes.data?.data?.items || []);
-      setTransactions(txRes.data?.data?.items || []);
-      setRouting(routingRes.data?.data?.items || []);
+      setAccounts(accRes.status === 'fulfilled' ? accRes.value.data?.data?.items || [] : []);
+      setRules(rulesRes.status === 'fulfilled' ? rulesRes.value.data?.data?.items || [] : []);
+      setTransactions(txRes.status === 'fulfilled' ? txRes.value.data?.data?.items || [] : []);
+      setRouting(routingRes.status === 'fulfilled' ? routingRes.value.data?.data?.items || [] : []);
     } catch (err) {
       if (err?.response?.status === 401) clearAuth();
     } finally {
