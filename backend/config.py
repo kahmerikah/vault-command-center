@@ -20,11 +20,18 @@ class Config:
     CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", REDIS_URL)
     API_VERSION = os.getenv("API_VERSION", "v1")
     FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
-    ALLOWED_ORIGINS = [
+    _BASE_ALLOWED_ORIGINS = [
         origin.strip()
         for origin in os.getenv("ALLOWED_ORIGINS", FRONTEND_ORIGIN).split(",")
         if origin.strip()
     ]
+    _LOCAL_DEV_ORIGINS = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    ]
+    ALLOWED_ORIGINS = list(dict.fromkeys(_BASE_ALLOWED_ORIGINS + _LOCAL_DEV_ORIGINS))
     STORAGE_PROVIDER = os.getenv("STORAGE_PROVIDER", "local")
     LOCAL_STORAGE_PATH = os.getenv("LOCAL_STORAGE_PATH", "./storage")
     STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")

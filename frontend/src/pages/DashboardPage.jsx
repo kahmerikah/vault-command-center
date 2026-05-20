@@ -98,8 +98,11 @@ export default function DashboardPage() {
 
     load();
 
-    connectSocket(accessToken);
-    socket.emit("dashboard:subscribe", { stream: "main" });
+    const useRealtime = import.meta.env.PROD;
+    if (useRealtime) {
+      connectSocket(accessToken);
+      socket.emit("dashboard:subscribe", { stream: "main" });
+    }
 
     const reload = () => load();
     const onActivity = (payload) => {
@@ -113,11 +116,13 @@ export default function DashboardPage() {
       setTerminalLines((prev) => [String(payload.line), ...prev].slice(0, 20));
     };
 
-    socket.on("notification:new", reload);
-    socket.on("chain:transaction", reload);
-    socket.on("booking:updated", reload);
-    socket.on("activity:new", onActivity);
-    socket.on("terminal:line", onTerminalLine);
+    if (useRealtime) {
+      socket.on("notification:new", reload);
+      socket.on("chain:transaction", reload);
+      socket.on("booking:updated", reload);
+      socket.on("activity:new", onActivity);
+      socket.on("terminal:line", onTerminalLine);
+    }
 
     const healthTimer = window.setInterval(async () => {
       try {
@@ -129,13 +134,17 @@ export default function DashboardPage() {
     }, 15000);
 
     return () => {
-      socket.off("notification:new", reload);
-      socket.off("chain:transaction", reload);
-      socket.off("booking:updated", reload);
-      socket.off("activity:new", onActivity);
-      socket.off("terminal:line", onTerminalLine);
+      if (useRealtime) {
+        socket.off("notification:new", reload);
+        socket.off("chain:transaction", reload);
+        socket.off("booking:updated", reload);
+        socket.off("activity:new", onActivity);
+        socket.off("terminal:line", onTerminalLine);
+      }
       window.clearInterval(healthTimer);
-      disconnectSocket();
+      if (useRealtime) {
+        disconnectSocket();
+      }
     };
   }, [accessToken, load]);
 
