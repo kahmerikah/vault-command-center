@@ -8,6 +8,7 @@ External API (optional):
 """
 import os
 import math
+import re
 import requests
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, date
@@ -22,15 +23,40 @@ class PropertyService:
 
     @staticmethod
     def estimate_value(data: dict) -> dict:
-        """Estimate value/deal metrics from address + zip without saving a property."""
-        zip_code = str(data.get("zip_code") or "").strip()
+        """Estimate value/deal metrics from address with optional zip override."""
         address = str(data.get("address") or "").strip()
-        if not address or not zip_code:
-            raise ValueError("address and zip_code required")
+        if not address:
+            raise ValueError("address required")
 
-        listing_price = Decimal(str(data["listing_price"])) if data.get("listing_price") else None
-        sqft = int(data["sqft"]) if data.get("sqft") else None
-        property_type = data.get("property_type", "single_family")
+        listing_price = _to_decimal(data.get("listing_price"))
+        sqft = _to_int(data.get("sqft"))
+        property_type = data.get("property_type") or "single_family"
+
+        enriched = PropertyService._enrich_from_address(address)
+        zip_code = str(data.get("zip_code") or enriched.get("zip_code") or "").strip()
+        if not zip_code:
+            raise ValueError("Could not infer zip_code. Add zip_code in advanced inputs.")
+
+        city = data.get("city") or enriched.get("city")
+        state = data.get("state") or enriched.get("state")
+        bedrooms = _to_int(data.get("bedrooms") or enriched.get("bedrooms"))
+        bathrooms = _to_decimal(data.get("bathrooms") or enriched.get("bathrooms"))
+        lot_size_sqft = _to_int(data.get("lot_size_sqft") or enriched.get("lot_size_sqft"))
+        year_built = _to_int(data.get("year_built") or enriched.get("year_built"))
+
+        if not sqft and enriched.get("sqft"):
+            sqft = _to_int(enriched.get("sqft"))
+        if not data.get("property_type") and enriched.get("property_type"):
+            property_type = enriched.get("property_type")
+        if listing_price is None and enriched.get("listing_price") is not None:
+            listing_price = _to_decimal(enriched.get("listing_price"))
+
+        target_roi_pct = _to_decimal(data.get("target_roi_pct"))
+        rehab_estimate = _to_decimal(data.get("rehab_estimate"))
+        down_payment_pct = _to_decimal(data.get("down_payment_pct")) or Decimal("20")
+        interest_rate_pct = _to_decimal(data.get("interest_rate_pct")) or Decimal("7")
+        loan_years = _to_int(data.get("loan_years")) or 30
+        expense_ratio_pct = _to_decimal(data.get("expense_ratio_pct")) or Decimal("35")
 
         comps = PropertyService._fetch_market_snapshot(
             zip_code=zip_code,
@@ -48,7 +74,22 @@ class PropertyService:
             estimated_value = listing_price
 
         estimated_rent = (estimated_value * Decimal("0.008")).quantize(Decimal("0.01")) if estimated_value else None
-        monthly_mortgage_est = PropertyService._estimate_mortgage(listing_price or estimated_value)
+        purchase_price = listing_price or estimated_value
+        monthly_mortgage_est = PropertyService._estimate_mortgage(
+            purchase_price,
+            down_payment_pct=down_payment_pct,
+            annual_rate_pct=interest_rate_pct,
+            years=loan_years,
+        )
+
+        monthly_tax_est = PropertyService._estimate_property_tax(purchase_price)
+        monthly_expense_est = None
+        monthly_cash_flow_est = None
+        if estimated_rent:
+            monthly_expense_est = (estimated_rent * (expense_ratio_pct / Decimal("100"))).quantize(Decimal("0.01"))
+            monthly_cash_flow_est = (
+                estimated_rent - monthly_expense_est - (monthly_mortgage_est or Decimal("0")) - (monthly_tax_est or Decimal("0"))
+            ).quantize(Decimal("0.01"))
 
         price_deviation_pct = None
         deal_verdict = "unknown"
@@ -67,20 +108,43 @@ class PropertyService:
 
         cap_rate_pct = None
         roi_estimate_pct = None
-        if (listing_price or estimated_value) and estimated_rent:
-            purchase_price = listing_price or estimated_value
+        if purchase_price and estimated_rent:
             annual_rent = estimated_rent * 12
-            expenses_est = annual_rent * Decimal("0.35")
+            expenses_est = annual_rent * (expense_ratio_pct / Decimal("100"))
             noi = annual_rent - expenses_est
             if purchase_price and purchase_price > 0:
                 cap_rate_pct = (noi / purchase_price * 100).quantize(Decimal("0.0001"))
                 annual_net = noi - (monthly_mortgage_est or 0) * 12
                 roi_estimate_pct = (annual_net / purchase_price * 100).quantize(Decimal("0.0001"))
 
+        confidence_score = PropertyService._confidence_score(
+            comps_count=len(comps),
+            has_sqft=bool(sqft),
+            has_listing=bool(listing_price),
+            has_city_state=bool(city and state),
+        )
+        confidence_label = PropertyService._confidence_label(confidence_score)
+
+        neighborhood_trend = PropertyService._neighborhood_trend(price_deviation_pct, comps_count=len(comps))
+        appreciation_trend = PropertyService._appreciation_trend(area_avg_sqft)
+        risk_level = PropertyService._risk_level(confidence_score, price_deviation_pct)
+
+        opportunity_classification = "monitor"
+        if deal_verdict == "good_deal" and monthly_cash_flow_est and monthly_cash_flow_est > 0:
+            opportunity_classification = "acquisition_candidate"
+        elif deal_verdict == "overpriced":
+            opportunity_classification = "avoid"
+
         return {
             "address": address,
             "zip_code": zip_code,
+            "city": city,
+            "state": state,
             "property_type": property_type,
+            "bedrooms": bedrooms,
+            "bathrooms": str(bathrooms) if bathrooms is not None else None,
+            "lot_size_sqft": lot_size_sqft,
+            "year_built": year_built,
             "listing_price": str(listing_price) if listing_price is not None else None,
             "sqft": sqft,
             "area_avg_price": str(area_avg) if area_avg is not None else None,
@@ -88,33 +152,45 @@ class PropertyService:
             "estimated_value": str(estimated_value) if estimated_value is not None else None,
             "estimated_rent": str(estimated_rent) if estimated_rent is not None else None,
             "monthly_mortgage_est": str(monthly_mortgage_est) if monthly_mortgage_est is not None else None,
+            "monthly_tax_est": str(monthly_tax_est) if monthly_tax_est is not None else None,
+            "monthly_expense_est": str(monthly_expense_est) if monthly_expense_est is not None else None,
+            "monthly_cash_flow_est": str(monthly_cash_flow_est) if monthly_cash_flow_est is not None else None,
             "price_deviation_pct": str(price_deviation_pct) if price_deviation_pct is not None else None,
             "deal_verdict": deal_verdict,
             "deal_score": str(deal_score) if deal_score is not None else None,
             "cap_rate_pct": str(cap_rate_pct) if cap_rate_pct is not None else None,
             "roi_estimate_pct": str(roi_estimate_pct) if roi_estimate_pct is not None else None,
+            "confidence_score": confidence_score,
+            "confidence": confidence_label,
+            "neighborhood_trend": neighborhood_trend,
+            "appreciation_trend": appreciation_trend,
+            "risk_level": risk_level,
+            "opportunity_classification": opportunity_classification,
+            "target_roi_pct": str(target_roi_pct) if target_roi_pct is not None else None,
+            "rehab_estimate": str(rehab_estimate) if rehab_estimate is not None else None,
             "comps_used": len(comps),
             "comps": comps[:8],
         }
 
     @staticmethod
     def add_property(user_id: str, data: dict) -> Property:
+        normalized = PropertyService._normalize_property_inputs(data)
         prop = Property(
             user_id=user_id,
-            address=data["address"],
-            city=data.get("city"),
-            state=data.get("state"),
-            zip_code=data["zip_code"],
-            property_type=data.get("property_type", "single_family"),
-            bedrooms=data.get("bedrooms"),
-            bathrooms=data.get("bathrooms"),
-            sqft=data.get("sqft"),
-            lot_size_sqft=data.get("lot_size_sqft"),
-            year_built=data.get("year_built"),
-            listing_price=Decimal(str(data["listing_price"])) if data.get("listing_price") else None,
-            notes=data.get("notes"),
-            source=data.get("source", "manual"),
-            status=data.get("status", "watching"),
+            address=normalized["address"],
+            city=normalized.get("city"),
+            state=normalized.get("state"),
+            zip_code=normalized["zip_code"],
+            property_type=normalized.get("property_type", "single_family"),
+            bedrooms=normalized.get("bedrooms"),
+            bathrooms=normalized.get("bathrooms"),
+            sqft=normalized.get("sqft"),
+            lot_size_sqft=normalized.get("lot_size_sqft"),
+            year_built=normalized.get("year_built"),
+            listing_price=normalized.get("listing_price"),
+            notes=normalized.get("notes"),
+            source=normalized.get("source", "manual"),
+            status=normalized.get("status", "watching"),
         )
         db.session.add(prop)
         db.session.flush()
@@ -309,15 +385,178 @@ class PropertyService:
         return (base * Decimal("0.008")).quantize(Decimal("0.01"))
 
     @staticmethod
-    def _estimate_mortgage(price) -> Optional[Decimal]:
-        """30yr fixed at 7% with 20% down."""
+    def _estimate_mortgage(price, down_payment_pct=Decimal("20"), annual_rate_pct=Decimal("7"), years=30) -> Optional[Decimal]:
         if not price:
             return None
-        loan = Decimal(str(price)) * Decimal("0.80")
-        monthly_rate = Decimal("0.07") / 12
-        n = 360
-        factor = (monthly_rate * (1 + monthly_rate) ** n) / ((1 + monthly_rate) ** n - 1)
+
+        price_dec = Decimal(str(price))
+        if price_dec <= 0:
+            return None
+
+        down_pct = Decimal(str(down_payment_pct)) / Decimal("100")
+        down_pct = max(Decimal("0"), min(down_pct, Decimal("0.99")))
+        loan = price_dec * (Decimal("1") - down_pct)
+
+        monthly_rate = (Decimal(str(annual_rate_pct)) / Decimal("100")) / Decimal("12")
+        periods = int(years) * 12
+        if periods <= 0:
+            periods = 360
+        if monthly_rate <= 0:
+            return (loan / Decimal(periods)).quantize(Decimal("0.01"))
+
+        factor = (monthly_rate * (Decimal("1") + monthly_rate) ** periods) / ((Decimal("1") + monthly_rate) ** periods - Decimal("1"))
         return (loan * factor).quantize(Decimal("0.01"))
+
+    @staticmethod
+    def _estimate_property_tax(price) -> Optional[Decimal]:
+        if not price:
+            return None
+        annual_tax = Decimal(str(price)) * Decimal("0.012")
+        return (annual_tax / Decimal("12")).quantize(Decimal("0.01"))
+
+    @staticmethod
+    def _enrich_from_address(address: str) -> dict:
+        """Best-effort enrichment from external listing API based on address-like location."""
+        api_key = os.getenv("RAPIDAPI_KEY", "")
+        host = os.getenv("RAPIDAPI_HOST_ZILLOW", "zillow-com1.p.rapidapi.com")
+
+        fallback = {
+            "zip_code": _extract_zip(address),
+            "city": None,
+            "state": None,
+            "sqft": None,
+            "lot_size_sqft": None,
+            "year_built": None,
+            "bedrooms": None,
+            "bathrooms": None,
+            "property_type": None,
+            "listing_price": None,
+        }
+
+        if not api_key:
+            return fallback
+
+        try:
+            url = f"https://{host}/propertyExtendedSearch"
+            resp = requests.get(
+                url,
+                headers={"X-RapidAPI-Key": api_key, "X-RapidAPI-Host": host},
+                params={"location": address, "status_type": "ForSale", "sort": "Newest"},
+                timeout=10,
+            )
+            if not resp.ok:
+                return fallback
+
+            props = resp.json().get("props") or []
+            if not props:
+                return fallback
+
+            best = props[0]
+            fallback.update(
+                {
+                    "zip_code": str(
+                        best.get("zipcode")
+                        or best.get("zipCode")
+                        or best.get("zip")
+                        or fallback.get("zip_code")
+                        or ""
+                    ).strip() or fallback.get("zip_code"),
+                    "city": best.get("city"),
+                    "state": best.get("state") or best.get("stateCode"),
+                    "sqft": best.get("livingArea"),
+                    "lot_size_sqft": best.get("lotAreaValue"),
+                    "year_built": best.get("yearBuilt"),
+                    "bedrooms": best.get("bedrooms"),
+                    "bathrooms": best.get("bathrooms"),
+                    "property_type": _normalize_property_type(best.get("homeType") or best.get("propertyType")),
+                    "listing_price": best.get("price"),
+                }
+            )
+        except Exception:
+            return fallback
+
+        return fallback
+
+    @staticmethod
+    def _normalize_property_inputs(data: dict) -> dict:
+        address = str(data.get("address") or "").strip()
+        if not address:
+            raise ValueError("address required")
+
+        enriched = PropertyService._enrich_from_address(address)
+        zip_code = str(data.get("zip_code") or enriched.get("zip_code") or "").strip()
+        if not zip_code:
+            raise ValueError("zip_code required")
+
+        normalized = {
+            "address": address,
+            "zip_code": zip_code,
+            "city": data.get("city") or enriched.get("city"),
+            "state": data.get("state") or enriched.get("state"),
+            "property_type": data.get("property_type") or enriched.get("property_type") or "single_family",
+            "bedrooms": _to_int(data.get("bedrooms") or enriched.get("bedrooms")),
+            "bathrooms": _to_decimal(data.get("bathrooms") or enriched.get("bathrooms")),
+            "sqft": _to_int(data.get("sqft") or enriched.get("sqft")),
+            "lot_size_sqft": _to_int(data.get("lot_size_sqft") or enriched.get("lot_size_sqft")),
+            "year_built": _to_int(data.get("year_built") or enriched.get("year_built")),
+            "listing_price": _to_decimal(data.get("listing_price") or enriched.get("listing_price")),
+            "notes": data.get("notes"),
+            "source": data.get("source", "manual"),
+            "status": data.get("status", "watching"),
+        }
+        return normalized
+
+    @staticmethod
+    def _confidence_score(comps_count: int, has_sqft: bool, has_listing: bool, has_city_state: bool) -> int:
+        score = 25
+        score += min(comps_count, 12) * 4
+        if has_sqft:
+            score += 10
+        if has_listing:
+            score += 10
+        if has_city_state:
+            score += 7
+        return max(1, min(score, 99))
+
+    @staticmethod
+    def _confidence_label(score: int) -> str:
+        if score >= 80:
+            return "HIGH"
+        if score >= 55:
+            return "MEDIUM"
+        return "LOW"
+
+    @staticmethod
+    def _neighborhood_trend(price_deviation_pct: Optional[Decimal], comps_count: int) -> str:
+        if comps_count < 3:
+            return "insufficient_data"
+        if price_deviation_pct is None:
+            return "stable"
+        if price_deviation_pct <= Decimal("-5"):
+            return "undervalued_cluster"
+        if price_deviation_pct >= Decimal("10"):
+            return "heated_market"
+        return "stable"
+
+    @staticmethod
+    def _appreciation_trend(area_avg_sqft: Optional[Decimal]) -> str:
+        if not area_avg_sqft:
+            return "unknown"
+        if area_avg_sqft >= Decimal("280"):
+            return "strong"
+        if area_avg_sqft >= Decimal("180"):
+            return "moderate"
+        return "flat"
+
+    @staticmethod
+    def _risk_level(confidence_score: int, price_deviation_pct: Optional[Decimal]) -> str:
+        if confidence_score < 45:
+            return "high"
+        if price_deviation_pct is not None and price_deviation_pct > Decimal("15"):
+            return "high"
+        if confidence_score < 70:
+            return "medium"
+        return "low"
 
 
 def _map_property_type(ptype: str) -> str:
@@ -329,3 +568,51 @@ def _map_property_type(ptype: str) -> str:
         "commercial": "Apartments_Condos_Co-ops",
     }
     return mapping.get(ptype, "Houses")
+
+
+def _normalize_property_type(raw_type: Optional[str]) -> Optional[str]:
+    if not raw_type:
+        return None
+    token = str(raw_type).strip().lower()
+    if "single" in token or "house" in token:
+        return "single_family"
+    if "condo" in token or "co-op" in token or "apartment" in token:
+        return "condo"
+    if "multi" in token or "duplex" in token or "triplex" in token:
+        return "multi_family"
+    if "land" in token or "lot" in token:
+        return "land"
+    if "commercial" in token:
+        return "commercial"
+    return "single_family"
+
+
+def _extract_zip(address: str) -> Optional[str]:
+    if not address:
+        return None
+    match = re.search(r"\b(\d{5})(?:-\d{4})?\b", address)
+    return match.group(1) if match else None
+
+
+def _to_decimal(value) -> Optional[Decimal]:
+    if value is None:
+        return None
+    candidate = str(value).strip().replace(",", "")
+    if not candidate:
+        return None
+    try:
+        return Decimal(candidate)
+    except Exception:
+        return None
+
+
+def _to_int(value) -> Optional[int]:
+    if value is None:
+        return None
+    candidate = str(value).strip().replace(",", "")
+    if not candidate:
+        return None
+    try:
+        return int(float(candidate))
+    except Exception:
+        return None

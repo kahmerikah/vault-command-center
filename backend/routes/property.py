@@ -40,9 +40,12 @@ def list_properties():
 def add_property():
     user_id = get_jwt_identity()
     data = request.json or {}
-    if not data.get("address") or not data.get("zip_code"):
-        return error_response("address and zip_code required", 400)
-    prop = PropertyService.add_property(user_id=user_id, data=data)
+    if not data.get("address"):
+        return error_response("address required", 400)
+    try:
+        prop = PropertyService.add_property(user_id=user_id, data=data)
+    except ValueError as exc:
+        return error_response(str(exc), 400)
     return success_response(_serialize(prop), 201)
 
 
@@ -50,8 +53,8 @@ def add_property():
 @jwt_required()
 def estimate_property():
     data = request.json or {}
-    if not data.get("address") or not data.get("zip_code"):
-        return error_response("address and zip_code required", 400)
+    if not data.get("address"):
+        return error_response("address required", 400)
     try:
         estimate = PropertyService.estimate_value(data)
         return success_response(estimate)
