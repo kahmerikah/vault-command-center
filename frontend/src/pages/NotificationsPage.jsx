@@ -9,6 +9,8 @@ export default function NotificationsPage() {
   const { accessToken, refreshToken, user, clearAuth } = useVaultStore();
   const [items, setItems] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   const handleLogout = async () => {
     try {
@@ -26,9 +28,17 @@ export default function NotificationsPage() {
   };
 
   const load = async () => {
-    const res = await api.get("/notifications", { params: { limit: 100 } });
-    setItems(res.data?.data?.items || []);
-    setUnreadCount(res.data?.data?.unread_count || 0);
+    setLoading(true);
+    setLoadError("");
+    try {
+      const res = await api.get("/notifications", { params: { limit: 100 } });
+      setItems(res.data?.data?.items || []);
+      setUnreadCount(res.data?.data?.unread_count || 0);
+    } catch (error) {
+      setLoadError(error?.response?.data?.error || "Unable to load notification stream.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -40,6 +50,8 @@ export default function NotificationsPage() {
 
   return (
     <AppShell user={user} onLogout={handleLogout} title="notifications">
+      {loadError ? <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">{loadError}</div> : null}
+      {loading ? <div className="mb-4 rounded-lg border border-vault-accent/20 bg-vault-bg/50 px-3 py-2 text-xs text-vault-textDim">Syncing notification stream...</div> : null}
       <NotificationPanel
         items={items}
         unreadCount={unreadCount}

@@ -5,7 +5,7 @@ export default function Topbar({ user, onLogout, title = "dashboard", onToggleSi
         <button
           type="button"
           onClick={onToggleSidebar}
-          className="mb-2 rounded-lg border border-vault-accent/30 bg-vault-bg/60 px-2 py-1 text-xs uppercase tracking-[0.2em] text-vault-textDim lg:hidden"
+          className="mb-2 h-9 rounded-lg border border-vault-accent/30 bg-vault-bg/60 px-3 py-1 text-xs uppercase tracking-[0.2em] text-vault-textDim lg:hidden"
         >
           Menu
         </button>
@@ -16,7 +16,7 @@ export default function Topbar({ user, onLogout, title = "dashboard", onToggleSi
         <button
           type="button"
           onClick={onOpenSettings}
-          className="rounded-xl border border-vault-accent/30 bg-vault-bg/60 px-3 py-2 text-xs uppercase tracking-[0.2em] text-vault-textDim hover:text-white"
+          className="h-10 rounded-xl border border-vault-accent/30 bg-vault-bg/60 px-4 py-2 text-xs uppercase tracking-[0.2em] text-vault-textDim hover:text-white"
         >
           Settings
         </button>
@@ -26,7 +26,7 @@ export default function Topbar({ user, onLogout, title = "dashboard", onToggleSi
         <button
           type="button"
           onClick={onLogout}
-          className="rounded-xl border border-vault-accent/30 bg-vault-bg/60 px-3 py-2 text-xs uppercase tracking-[0.2em] text-vault-textDim hover:text-white"
+          className="h-10 rounded-xl border border-vault-accent/30 bg-vault-bg/60 px-4 py-2 text-xs uppercase tracking-[0.2em] text-vault-textDim hover:text-white"
         >
           Logout
         </button>

@@ -23,6 +23,7 @@ export default function FinancialPage() {
   const [linkToken, setLinkToken] = useState("");
   const [linkLoading, setLinkLoading] = useState(false);
   const [exchangingToken, setExchangingToken] = useState(false);
+  const [actionNotice, setActionNotice] = useState("");
 
   const load = useCallback(async () => {
     if (!accessToken) return;
@@ -51,11 +52,13 @@ export default function FinancialPage() {
   const addRule = async (e) => {
     e.preventDefault();
     setActionError("");
+    setActionNotice("");
     try {
       await api.post("/financial/allocation-rules", ruleForm);
       setShowAddRule(false);
       setRuleForm({ name: "", destination_tag: "", allocation_pct: "", trigger: "income_received", priority: 50 });
       await load();
+      setActionNotice("Routing rule saved.");
     } catch (err) {
       setActionError(err?.response?.data?.error || "Unable to save rule.");
     }
@@ -63,9 +66,11 @@ export default function FinancialPage() {
 
   const toggleRule = async (rule) => {
     setActionError("");
+    setActionNotice("");
     try {
       await api.patch(`/financial/allocation-rules/${rule.id}`, { is_active: !rule.is_active });
       await load();
+      setActionNotice(`Rule ${!rule.is_active ? "activated" : "paused"}.`);
     } catch (err) {
       setActionError(err?.response?.data?.error || "Unable to update rule state.");
     }
@@ -74,10 +79,12 @@ export default function FinancialPage() {
   const runRouter = async (e) => {
     e.preventDefault();
     setActionError("");
+    setActionNotice("");
     try {
       const res = await api.post("/financial/route", routeForm);
       setRouteResult(res.data?.data);
       await load();
+      setActionNotice("Routing simulation complete.");
     } catch (err) {
       setActionError(err?.response?.data?.error || "Unable to run router simulation.");
     }
@@ -85,6 +92,7 @@ export default function FinancialPage() {
 
   const syncPlaid = async () => {
     try {
+      setActionNotice("");
       setPlaidStatus("Syncing Plaid transactions...");
       await api.post("/financial/plaid/sync", { days: 30 });
       setPlaidError("");
@@ -99,6 +107,7 @@ export default function FinancialPage() {
   const onPlaidSuccess = async (publicToken) => {
     setExchangingToken(true);
     try {
+      setActionNotice("");
       setPlaidError("");
       setPlaidStatus("Exchanging Plaid token...");
       await api.post("/financial/plaid/exchange", { public_token: publicToken });
@@ -107,6 +116,7 @@ export default function FinancialPage() {
       await api.post("/financial/plaid/refresh-balances", {});
       await load();
       setPlaidStatus("Bank linked successfully.");
+      setActionNotice("Bank account linked and synced.");
     } catch (err) {
       setPlaidStatus("");
       setPlaidError(err?.response?.data?.error || "Bank link token exchange failed.");
@@ -136,6 +146,7 @@ export default function FinancialPage() {
     }
     setLinkLoading(true);
     try {
+      setActionNotice("");
       setPlaidStatus("");
       setPlaidError("");
       setPlaidStatus("Creating Plaid link token...");
@@ -185,9 +196,17 @@ export default function FinancialPage() {
         </div>
       </div>
 
-      {plaidStatus ? <div className="text-xs font-mono text-emerald-300">{plaidStatus}</div> : null}
-      {plaidError ? <div className="text-xs font-mono text-red-300">{plaidError}</div> : null}
-      {actionError ? <div className="text-xs font-mono text-red-300">{actionError}</div> : null}
+      {plaidStatus ? <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-mono text-emerald-200">{plaidStatus}</div> : null}
+      {plaidError ? <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-mono text-red-200">{plaidError}</div> : null}
+      {actionNotice ? <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-mono text-emerald-200">{actionNotice}</div> : null}
+      {actionError ? <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-mono text-red-200">{actionError}</div> : null}
+
+      {!accounts.length && !plaidStatus && !plaidError ? (
+        <div className="somb-empty-state">
+          <p className="font-mono text-xs text-slate-300">No linked financial accounts detected.</p>
+          <p className="mt-1 font-mono text-xs text-slate-500">Next steps: Link Bank via Plaid, then run Sync Plaid to import balances and transactions.</p>
+        </div>
+      ) : null}
 
       {/* KPI Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -211,8 +230,9 @@ export default function FinancialPage() {
       {activeTab === "accounts" && (
         <GlassPanel>
           {accounts.length === 0 ? (
-            <div className="text-center py-12 text-slate-500 font-mono text-xs">
-              No accounts linked. Connect Plaid or add manually.
+            <div className="text-center py-12 text-slate-500 font-mono text-xs space-y-1">
+              <p>No accounts linked yet.</p>
+              <p>Use Link Bank to open Plaid, then Sync Plaid to hydrate account and transaction data.</p>
             </div>
           ) : (
             <div className="divide-y divide-white/5">
@@ -311,7 +331,7 @@ export default function FinancialPage() {
       {/* Transactions Tab */}
       {activeTab === "transactions" && (
         <GlassPanel>
-          {transactions.length === 0 ? <p className="text-center py-8 text-slate-500 font-mono text-xs">No transactions. Sync Plaid to import.</p> : (
+          {transactions.length === 0 ? <p className="text-center py-8 text-slate-500 font-mono text-xs">No transactions yet. Link a bank account, then run Sync Plaid to import transaction flow.</p> : (
             <div className="divide-y divide-white/5">
               {transactions.map(t => (
                 <div key={t.id} className="flex items-center justify-between py-3">
@@ -332,7 +352,7 @@ export default function FinancialPage() {
       {/* Routing History Tab */}
       {activeTab === "routing" && (
         <GlassPanel>
-          {routing.length === 0 ? <p className="text-center py-8 text-slate-500 font-mono text-xs">No routing events yet.</p> : (
+          {routing.length === 0 ? <p className="text-center py-8 text-slate-500 font-mono text-xs">No routing events yet. Run a simulation from Rules to validate destination allocations.</p> : (
             <div className="divide-y divide-white/5">
               {routing.map(ev => (
                 <div key={ev.id} className="flex items-center justify-between py-3">

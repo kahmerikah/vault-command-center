@@ -27,6 +27,7 @@ export default function PropertyPage() {
     property_type: "single_family", listing_price: "", bedrooms: "", bathrooms: "", sqft: "", notes: "",
   });
   const [actionError, setActionError] = useState("");
+  const [actionNotice, setActionNotice] = useState("");
 
   const load = useCallback(async () => {
     if (!accessToken) return;
@@ -46,6 +47,7 @@ export default function PropertyPage() {
 
   const openProperty = async (id) => {
     setActionError("");
+    setActionNotice("");
     try {
       const res = await api.get(`/property/${id}`);
       setSelected(res.data?.data);
@@ -57,11 +59,13 @@ export default function PropertyPage() {
   const addProperty = async (e) => {
     e.preventDefault();
     setActionError("");
+    setActionNotice("");
     try {
       await api.post("/property", form);
       setShowAdd(false);
       setForm({ address: "", zip_code: "", city: "", state: "", property_type: "single_family", listing_price: "", bedrooms: "", bathrooms: "", sqft: "", notes: "" });
       await load();
+      setActionNotice("Property added and queued for analysis.");
     } catch (err) {
       setActionError(err?.response?.data?.error || "Unable to add property.");
     }
@@ -69,18 +73,22 @@ export default function PropertyPage() {
 
   const reAnalyze = async (id) => {
     setActionError("");
+    setActionNotice("");
     try {
       const res = await api.post(`/property/${id}/analyze`);
       setSelected(res.data?.data);
       await load();
+      setActionNotice("Property analysis complete.");
     } catch (err) {
       setActionError(err?.response?.data?.error || "Unable to re-analyze property.");
     }
   };
 
   const updateStatus = async (id, status) => {
+    setActionNotice("");
     await api.patch(`/property/${id}`, { status });
     setSelected(s => s ? { ...s, status } : s);
+    setActionNotice(`Property status updated: ${status}.`);
     load();
   };
 
@@ -88,9 +96,11 @@ export default function PropertyPage() {
 
   const runEstimate = async (e) => {
     e.preventDefault();
+    setActionNotice("");
     try {
       const res = await api.post("/property/estimate", estimateForm);
       setEstimate(res.data?.data || null);
+      setActionNotice("Valuation analysis complete.");
     } catch (err) {
       setEstimate(null);
       setActionError(err?.response?.data?.error || "Unable to estimate value.");
@@ -108,7 +118,8 @@ export default function PropertyPage() {
         </button>
       </div>
 
-      {actionError ? <div className="text-xs font-mono text-red-300">{actionError}</div> : null}
+      {actionNotice ? <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-mono text-emerald-200">{actionNotice}</div> : null}
+      {actionError ? <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-mono text-red-200">{actionError}</div> : null}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <MetricCard label="Tracked" value={properties.length} status="ok" />
@@ -203,7 +214,10 @@ export default function PropertyPage() {
         <GlassPanel>
           <p className="font-mono text-xs text-slate-500 mb-3 tracking-widest uppercase">Properties</p>
           {properties.length === 0 ? (
-            <p className="text-center py-8 font-mono text-xs text-slate-500">No properties tracked yet.</p>
+            <div className="somb-empty-state text-center py-8 font-mono text-xs text-slate-500">
+              <p className="text-slate-300">No properties tracked yet.</p>
+              <p className="mt-1">Add an address to begin valuation, comp analysis, and deal scoring.</p>
+            </div>
           ) : (
             <div className="divide-y divide-white/5">
               {properties.map(p => (
@@ -294,7 +308,7 @@ export default function PropertyPage() {
         ) : (
           <GlassPanel>
             <div className="flex items-center justify-center h-full min-h-[200px] text-slate-500 font-mono text-xs">
-              Select a property to view analysis
+              Select a property to view analysis, confidence score, and action status.
             </div>
           </GlassPanel>
         )}

@@ -21,6 +21,8 @@ export default function DashboardPage() {
   const [terminalLines, setTerminalLines] = useState([]);
   const [terminalCommands, setTerminalCommands] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [opsNotice, setOpsNotice] = useState("");
+  const [opsError, setOpsError] = useState("");
 
   const handleLogout = async () => {
     try {
@@ -152,28 +154,60 @@ export default function DashboardPage() {
 
   const metricCards = useMemo(
     () => [
-      { label: "Active Users", value: metrics.users_total, hint: "Active account count", to: "/auth" },
-      { label: "Sessions", value: metrics.sessions_total, hint: "Authenticated sessions", to: "/auth" },
-      { label: "Payments", value: metrics.payments_total, hint: "Stripe transactions", to: "/payments" },
-      { label: "PDA", value: metrics.bookings_total, hint: "Personal assistant layer", to: "/pda" },
-      { label: "Chain TX", value: metrics.chain_tx_total, hint: "Blockchain rail", tone: "warning", to: "/blockchain" },
-      { label: "Notifications", value: metrics.notifications_unread, hint: "Unread alerts", tone: "danger", to: "/notifications" },
-      { label: "Modules", value: metrics.module_count, hint: "Enabled modules", to: "/modules" },
-      { label: "API Calls", value: metrics.api_calls_total, hint: "Captured traffic", to: "/analytics" },
-      { label: "WS Clients", value: metrics.connected_clients, hint: "Realtime clients", to: "/dashboard" },
-      { label: "Uptime", value: `${Math.floor((metrics.uptime_seconds || 0) / 60)}m`, hint: "Backend runtime", to: "/dashboard" },
+      { label: "Uptime", value: `${Math.floor((metrics.uptime_seconds || 0) / 60)}m`, hint: "Backend runtime", to: "/dashboard", priority: "critical" },
+      { label: "Notifications", value: metrics.notifications_unread, hint: "Unread alerts", tone: "danger", to: "/notifications", priority: "critical" },
+      { label: "Payments", value: metrics.payments_total, hint: "Stripe transactions", to: "/payments", priority: "critical" },
+      { label: "WS Clients", value: metrics.connected_clients, hint: "Realtime clients", to: "/dashboard", priority: "critical" },
+      { label: "Sessions", value: metrics.sessions_total, hint: "Authenticated sessions", to: "/auth", priority: "operational" },
+      { label: "Active Users", value: metrics.users_total, hint: "Active account count", to: "/auth", priority: "operational" },
+      { label: "API Calls", value: metrics.api_calls_total, hint: "Captured traffic", to: "/analytics", priority: "operational" },
+      { label: "PDA", value: metrics.bookings_total, hint: "Personal assistant layer", to: "/pda", priority: "operational" },
+      { label: "Chain TX", value: metrics.chain_tx_total, hint: "Blockchain rail", tone: "warning", to: "/blockchain", priority: "reference" },
+      { label: "Modules", value: metrics.module_count, hint: "Enabled modules", to: "/modules", priority: "reference" },
     ],
     [metrics]
   );
 
+  const criticalCards = metricCards.filter((card) => card.priority === "critical");
+  const operationalCards = metricCards.filter((card) => card.priority === "operational");
+  const referenceCards = metricCards.filter((card) => card.priority === "reference");
+
   return (
     <AppShell user={user} onLogout={handleLogout} title="dashboard">
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        {metricCards.map((card) => (
-          <button key={card.label} type="button" onClick={() => navigate(card.to)}>
-            <MetricCard label={card.label} value={loading ? "..." : card.value ?? "--"} hint={card.hint} tone={card.tone} />
-          </button>
-        ))}
+      {opsNotice ? <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">{opsNotice}</div> : null}
+      {opsError ? <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">{opsError}</div> : null}
+
+      <section>
+        <div className="mb-2 text-[10px] uppercase tracking-[0.2em] text-vault-textDim">Tier 1 · Critical</div>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {criticalCards.map((card) => (
+            <button key={card.label} type="button" className="somb-action" onClick={() => navigate(card.to)}>
+              <MetricCard label={card.label} value={loading ? "..." : card.value ?? "--"} hint={card.hint} tone={card.tone} priority={card.priority} />
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <div className="mb-2 text-[10px] uppercase tracking-[0.2em] text-vault-textDim">Tier 2 · Operational</div>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {operationalCards.map((card) => (
+            <button key={card.label} type="button" className="somb-action" onClick={() => navigate(card.to)}>
+              <MetricCard label={card.label} value={loading ? "..." : card.value ?? "--"} hint={card.hint} tone={card.tone} priority={card.priority} />
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <div className="mb-2 text-[10px] uppercase tracking-[0.2em] text-vault-textDim">Tier 3 · Reference</div>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-2">
+          {referenceCards.map((card) => (
+            <button key={card.label} type="button" className="somb-action" onClick={() => navigate(card.to)}>
+              <MetricCard label={card.label} value={loading ? "..." : card.value ?? "--"} hint={card.hint} tone={card.tone} priority={card.priority} />
+            </button>
+          ))}
+        </div>
       </section>
 
       <RevenueChart data={dashboard?.revenue_trend || []} />
@@ -184,10 +218,16 @@ export default function DashboardPage() {
           lines={terminalLines}
           commands={terminalCommands}
           onDispatch={async (command) => {
-            const response = await api.post("/ops/terminal/dispatch", { command });
-            const lines = response.data?.data?.lines || [];
-            if (lines.length) {
-              setTerminalLines((prev) => [...lines.map((line) => String(line)), ...prev].slice(0, 20));
+            try {
+              setOpsError("");
+              const response = await api.post("/ops/terminal/dispatch", { command });
+              const lines = response.data?.data?.lines || [];
+              if (lines.length) {
+                setTerminalLines((prev) => [...lines.map((line) => String(line)), ...prev].slice(0, 20));
+              }
+              setOpsNotice(`Command executed: ${command}`);
+            } catch (error) {
+              setOpsError(error?.response?.data?.error || "Terminal dispatch failed.");
             }
           }}
         />
@@ -196,9 +236,15 @@ export default function DashboardPage() {
       <ModuleLauncher
         modules={modules}
         onLaunch={async (module) => {
-          await api.post(`/modules/${module.key}/launch`);
-          const path = module.key === "blockchain" ? "/blockchain" : `/${module.key}`;
-          navigate(path);
+          try {
+            setOpsError("");
+            await api.post(`/modules/${module.key}/launch`);
+            setOpsNotice(`Module launched: ${module.name}`);
+            const path = module.key === "blockchain" ? "/blockchain" : `/${module.key}`;
+            navigate(path);
+          } catch (error) {
+            setOpsError(error?.response?.data?.error || "Module launch failed.");
+          }
         }}
       />
 

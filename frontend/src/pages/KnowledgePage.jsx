@@ -29,6 +29,7 @@ export default function KnowledgePage() {
   const [form, setForm] = useState({ title: "", body: "", kind: "note", category: "", tags: "" });
   const [page, setPage] = useState(1);
   const [actionError, setActionError] = useState("");
+  const [actionNotice, setActionNotice] = useState("");
 
   const load = useCallback(async (q = search, kind = filterKind, p = page) => {
     if (!accessToken) return;
@@ -50,11 +51,13 @@ export default function KnowledgePage() {
   const addEntry = async (e) => {
     e.preventDefault();
     setActionError("");
+    setActionNotice("");
     try {
       await api.post("/knowledge", form);
       setShowAdd(false);
       setForm({ title: "", body: "", kind: "note", category: "", tags: "" });
       await load();
+      setActionNotice("Knowledge entry saved.");
     } catch (err) {
       setActionError(err?.response?.data?.error || "Unable to save entry.");
     }
@@ -62,10 +65,12 @@ export default function KnowledgePage() {
 
   const archiveEntry = async (id) => {
     setActionError("");
+    setActionNotice("");
     try {
       await api.delete(`/knowledge/${id}`);
       setSelected(null);
       await load();
+      setActionNotice("Entry archived.");
     } catch (err) {
       setActionError(err?.response?.data?.error || "Unable to archive entry.");
     }
@@ -73,10 +78,12 @@ export default function KnowledgePage() {
 
   const togglePin = async (entry) => {
     setActionError("");
+    setActionNotice("");
     try {
       await api.patch(`/knowledge/${entry.id}`, { is_pinned: !entry.is_pinned });
       await load();
       if (selected?.id === entry.id) setSelected(s => ({ ...s, is_pinned: !entry.is_pinned }));
+      setActionNotice(entry.is_pinned ? "Entry unpinned." : "Entry pinned for quick access.");
     } catch (err) {
       setActionError(err?.response?.data?.error || "Unable to update pin state.");
     }
@@ -107,7 +114,8 @@ export default function KnowledgePage() {
         </select>
       </div>
 
-      {actionError ? <div className="text-xs font-mono text-red-300">{actionError}</div> : null}
+      {actionNotice ? <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-mono text-emerald-200">{actionNotice}</div> : null}
+      {actionError ? <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-mono text-red-200">{actionError}</div> : null}
 
       {showAdd && (
         <GlassPanel>
@@ -150,8 +158,8 @@ export default function KnowledgePage() {
           {loading ? (
             <div className="text-center py-12 font-mono text-xs text-slate-500">searching vault...</div>
           ) : entries.length === 0 ? (
-            <div className="text-center py-12 font-mono text-xs text-slate-500">
-              {search ? "No results found." : "Vault is empty. Add your first entry."}
+            <div className="somb-empty-state text-center py-12 font-mono text-xs text-slate-500">
+              {search ? "No results found. Try a broader query or remove kind filters." : "Vault is empty. Add your first note, runbook, or architecture decision to initialize knowledge memory."}
             </div>
           ) : (
             <div className="divide-y divide-white/5">
@@ -220,7 +228,7 @@ export default function KnowledgePage() {
         ) : (
           <GlassPanel>
             <div className="flex items-center justify-center h-full min-h-[200px] text-slate-500 font-mono text-xs">
-              Select an entry to read
+              Select an entry to inspect context, tags, and version history.
             </div>
           </GlassPanel>
         )}

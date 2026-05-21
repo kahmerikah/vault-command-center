@@ -3,6 +3,26 @@ import { useState } from "react";
 
 export default function LiveTerminalCard({ lines = [], commands = [], onDispatch }) {
   const [command, setCommand] = useState("");
+  const [status, setStatus] = useState("");
+  const [dispatching, setDispatching] = useState(false);
+
+  const runCommand = async () => {
+    const trimmed = command.trim();
+    if (!trimmed || dispatching) {
+      return;
+    }
+    try {
+      setDispatching(true);
+      setStatus("dispatching command...");
+      await onDispatch?.(trimmed);
+      setStatus("command complete");
+      setCommand("");
+    } catch {
+      setStatus("command failed");
+    } finally {
+      setDispatching(false);
+    }
+  };
 
   return (
     <GlassPanel title="Vault Terminal">
@@ -11,23 +31,18 @@ export default function LiveTerminalCard({ lines = [], commands = [], onDispatch
           value={command}
           onChange={(event) => setCommand(event.target.value)}
           placeholder="type command (e.g. status)"
-          className="w-full rounded border border-vault-accent/30 bg-black/50 px-2 py-1 text-xs text-vault-text"
+          className="h-9 w-full rounded border border-vault-accent/30 bg-black/50 px-3 py-1 text-xs text-vault-text"
         />
         <button
           type="button"
-          onClick={() => {
-            const trimmed = command.trim();
-            if (!trimmed) {
-              return;
-            }
-            onDispatch?.(trimmed);
-            setCommand("");
-          }}
-          className="rounded border border-vault-accent/30 px-2 py-1 text-xs"
+          onClick={runCommand}
+          disabled={dispatching}
+          className="h-9 rounded border border-vault-accent/30 px-3 py-1 text-xs disabled:opacity-50"
         >
-          Run
+          {dispatching ? "Running..." : "Run"}
         </button>
       </div>
+      {status ? <div className="mb-2 text-[11px] uppercase tracking-[0.16em] text-vault-textDim">{status}</div> : null}
       {commands.length > 0 && (
         <div className="mb-2 text-[11px] text-vault-textDim">Available: {commands.join(", ")}</div>
       )}

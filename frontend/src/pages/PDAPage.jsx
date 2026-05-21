@@ -49,6 +49,7 @@ export default function PDAPage() {
   const [tab, setTab] = useState("agenda");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [actionNotice, setActionNotice] = useState("");
 
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date();
@@ -130,6 +131,7 @@ export default function PDAPage() {
     event.preventDefault();
     const title = todoText.trim();
     if (!title) return;
+    setActionNotice("");
     await api.post("/knowledge", {
       title,
       body: title,
@@ -139,24 +141,31 @@ export default function PDAPage() {
       source: "pda",
     });
     setTodoText("");
+    setActionNotice("Task added to PDA queue.");
     load();
   };
 
   const completeTodo = async (id) => {
+    setActionNotice("");
     await api.delete(`/knowledge/${id}`);
+    setActionNotice("Task marked complete.");
     load();
   };
 
   const completeBooking = async (id) => {
+    setActionNotice("");
     await api.patch(`/bookings/${id}/status`, { status: "completed" });
+    setActionNotice("Booking marked completed.");
     load();
   };
 
   const createBooking = async (event) => {
     event.preventDefault();
+    setActionNotice("");
     await api.post("/bookings", formState);
     setFormState({ module_key: "booking", starts_at: "", ends_at: "", notes: "" });
     setTab("agenda");
+    setActionNotice("Booking created successfully.");
     load();
   };
 
@@ -190,6 +199,9 @@ export default function PDAPage() {
 
       {loadError ? (
         <div className="mb-3 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{loadError}</div>
+      ) : null}
+      {actionNotice ? (
+        <div className="mb-3 rounded border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">{actionNotice}</div>
       ) : null}
 
       {tab === "agenda" && (
@@ -263,7 +275,7 @@ export default function PDAPage() {
                       <button
                         type="button"
                         onClick={() => completeBooking(booking.id)}
-                        className="rounded border border-vault-accent/30 px-2 py-1 text-xs"
+                        className="h-9 rounded border border-vault-accent/30 px-3 py-1 text-xs"
                       >
                         Complete
                       </button>
@@ -271,7 +283,12 @@ export default function PDAPage() {
                   </div>
                 </div>
               ))}
-              {selectedBookings.length === 0 ? <div className="text-vault-textDim">No items for this day.</div> : null}
+              {selectedBookings.length === 0 ? (
+                <div className="somb-empty-state text-vault-textDim">
+                  <p className="text-vault-text">No agenda items for this day.</p>
+                  <p className="mt-1 text-xs">Create a booking in the New Booking tab or choose another date with scheduled work.</p>
+                </div>
+              ) : null}
             </div>
           </GlassPanel>
         </div>
@@ -289,7 +306,7 @@ export default function PDAPage() {
                   {(morning?.priorities || []).map((item, index) => (
                     <li key={index} className="text-vault-text">• {item}</li>
                   ))}
-                  {(morning?.priorities || []).length === 0 ? <li className="text-vault-textDim">No priorities.</li> : null}
+                  {(morning?.priorities || []).length === 0 ? <li className="text-vault-textDim">No priorities generated. Refresh with an updated ZIP or create bookings to seed priorities.</li> : null}
                 </ul>
               </div>
             </div>
@@ -307,6 +324,7 @@ export default function PDAPage() {
                       {row.kind} · {row.created_at?.slice(0, 16)}
                     </div>
                   ))}
+                  {history.length === 0 ? <div className="text-vault-textDim text-xs">No briefing history yet. Run morning/night briefings to build operational memory.</div> : null}
                 </div>
               </div>
             </div>
@@ -323,7 +341,7 @@ export default function PDAPage() {
               placeholder="Add a task"
               className="flex-1 rounded border border-vault-accent/30 bg-vault-bg/60 px-2 py-1 text-sm"
             />
-            <button type="submit" className="rounded border border-vault-accent/30 px-2 py-1 text-xs uppercase tracking-[0.18em]">
+            <button type="submit" className="h-9 rounded border border-vault-accent/30 px-3 py-1 text-xs uppercase tracking-[0.18em]">
               Add
             </button>
           </form>
@@ -332,12 +350,12 @@ export default function PDAPage() {
             {todos.map((todo) => (
               <div key={todo.id} className="flex items-center justify-between rounded border border-vault-accent/20 px-3 py-2 text-sm">
                 <span>{todo.title}</span>
-                <button type="button" onClick={() => completeTodo(todo.id)} className="text-xs text-vault-textDim hover:text-white">
+                <button type="button" onClick={() => completeTodo(todo.id)} className="h-8 rounded border border-vault-accent/30 px-3 text-xs text-vault-textDim hover:text-white">
                   Done
                 </button>
               </div>
             ))}
-            {todos.length === 0 ? <div className="text-vault-textDim text-sm">No to-dos yet.</div> : null}
+            {todos.length === 0 ? <div className="somb-empty-state text-vault-textDim text-sm">No to-dos yet. Add your next operational task to keep the queue alive.</div> : null}
           </div>
         </GlassPanel>
       )}
@@ -383,7 +401,7 @@ export default function PDAPage() {
               />
             </label>
             <div className="md:col-span-2">
-              <button type="submit" className="rounded border border-vault-accent/30 px-3 py-2 text-xs uppercase tracking-[0.2em]">
+              <button type="submit" className="h-10 rounded border border-vault-accent/30 px-4 py-2 text-xs uppercase tracking-[0.2em]">
                 Create Booking
               </button>
             </div>

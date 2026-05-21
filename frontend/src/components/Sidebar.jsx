@@ -1,17 +1,32 @@
 import { NavLink } from "react-router-dom";
 
-const links = [
-  { label: "Dashboard", to: "/dashboard" },
-  { label: "Financial OS", to: "/financial" },
-  { label: "Property Intel", to: "/property" },
-  { label: "PDA", to: "/pda" },
-  { label: "Knowledge OS", to: "/knowledge" },
-  { label: "Payments", to: "/payments" },
-  { label: "Blockchain", to: "/blockchain" },
-  { label: "Notifications", to: "/notifications" },
-  { label: "Analytics", to: "/analytics" },
-  { label: "Modules", to: "/modules" },
-  { label: "Auth", to: "/auth" },
+const groupedLinks = [
+  {
+    group: "Core",
+    links: [
+      { label: "Dashboard", to: "/dashboard" },
+      { label: "Financial OS", to: "/financial" },
+      { label: "PDA", to: "/pda" },
+    ],
+  },
+  {
+    group: "Operations",
+    links: [
+      { label: "Notifications", to: "/notifications" },
+      { label: "Analytics", to: "/analytics" },
+      { label: "Payments", to: "/payments" },
+      { label: "Property Intel", to: "/property" },
+      { label: "Knowledge OS", to: "/knowledge" },
+    ],
+  },
+  {
+    group: "Infrastructure",
+    links: [
+      { label: "Blockchain", to: "/blockchain" },
+      { label: "Modules", to: "/modules" },
+      { label: "Auth", to: "/auth" },
+    ],
+  },
 ];
 
 export default function Sidebar({ onNavigate }) {
@@ -19,22 +34,29 @@ export default function Sidebar({ onNavigate }) {
     <aside className="w-full rounded-2xl border border-vault-accent/20 bg-vault-panel/70 p-4 backdrop-blur-sm lg:w-64">
       <h2 className="font-display text-lg tracking-[0.24em] text-vault-accent">SOMB OS</h2>
       <p className="mt-1 text-xs text-vault-textDim">Command Center</p>
-      <nav className="mt-6 grid gap-2">
-        {links.map((link) => (
-          <NavLink
-            key={link.to}
-            to={link.to}
-            onClick={onNavigate}
-            className={({ isActive }) =>
-              `rounded-lg border px-3 py-2 text-left text-sm transition ${
-                isActive
-                  ? "border-vault-accent/70 bg-vault-accent/10 text-white"
-                  : "border-transparent bg-vault-bg/40 text-vault-text hover:border-vault-accent/40 hover:text-white"
-              }`
-            }
-          >
-            {link.label}
-          </NavLink>
+      <nav className="mt-6 space-y-5">
+        {groupedLinks.map((section) => (
+          <div key={section.group}>
+            <p className="mb-2 text-[10px] uppercase tracking-[0.24em] text-vault-textDim">{section.group}</p>
+            <div className="grid gap-2">
+              {section.links.map((link) => (
+                <NavLink
+                  key={link.to}
+                  to={link.to}
+                  onClick={onNavigate}
+                  className={({ isActive }) =>
+                    `somb-nav-link rounded-lg border px-3 py-2.5 text-left text-sm transition ${
+                      isActive
+                        ? "border-vault-accent/70 bg-vault-accent/10 text-white"
+                        : "border-transparent bg-vault-bg/40 text-vault-text hover:border-vault-accent/40 hover:bg-vault-bg/70 hover:text-white"
+                    }`
+                  }
+                >
+                  {link.label}
+                </NavLink>
+              ))}
+            </div>
+          </div>
         ))}
       </nav>
     </aside>
