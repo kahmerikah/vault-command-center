@@ -173,6 +173,7 @@ export default function PDAPage() {
   });
   const [selectedDay, setSelectedDay] = useState(dayKey(new Date()));
   const [showBookingComposer, setShowBookingComposer] = useState(false);
+  const [queueOrder, setQueueOrder] = useState([]);
 
   const [taskForm, setTaskForm] = useState({
     title: "",
@@ -335,6 +336,35 @@ export default function PDAPage() {
       return new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime();
     });
   }, [unfinishedTasks, unfinishedBookings]);
+
+  useEffect(() => {
+    setQueueOrder(operationalQueue.map((item) => `${item.type}-${item.id}`));
+  }, [operationalQueue]);
+
+  const orderedQueue = useMemo(() => {
+    const lookup = new Map(operationalQueue.map((item) => [`${item.type}-${item.id}`, item]));
+    const ordered = [];
+    queueOrder.forEach((key) => {
+      if (lookup.has(key)) {
+        ordered.push(lookup.get(key));
+        lookup.delete(key);
+      }
+    });
+    return [...ordered, ...lookup.values()];
+  }, [operationalQueue, queueOrder]);
+
+  const handleQueueDrop = (dragKey, dropKey) => {
+    if (!dragKey || !dropKey || dragKey === dropKey) return;
+    setQueueOrder((prev) => {
+      const arr = [...prev];
+      const dragIndex = arr.indexOf(dragKey);
+      const dropIndex = arr.indexOf(dropKey);
+      if (dragIndex < 0 || dropIndex < 0) return prev;
+      arr.splice(dragIndex, 1);
+      arr.splice(dropIndex, 0, dragKey);
+      return arr;
+    });
+  };
 
   const operationalFeed = useMemo(() => {
     const fromActivity = activity.map((item) => ({
@@ -652,8 +682,23 @@ export default function PDAPage() {
               </form>
 
               <div className="mt-3 space-y-2 text-sm">
-                {operationalQueue.slice(0, 12).map((item) => (
-                  <div key={`${item.type}-${item.id}`} className="rounded border border-vault-accent/20 bg-black/20 px-2 py-2">
+                {orderedQueue.slice(0, 12).map((item) => {
+                  const queueKey = `${item.type}-${item.id}`;
+                  return (
+                  <div
+                    key={queueKey}
+                    draggable
+                    onDragStart={(event) => {
+                      event.dataTransfer.setData("text/plain", queueKey);
+                    }}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const dragKey = event.dataTransfer.getData("text/plain");
+                      handleQueueDrop(dragKey, queueKey);
+                    }}
+                    className="rounded border border-vault-accent/20 bg-black/20 px-2 py-2"
+                  >
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="text-vault-text">{item.title}</p>
@@ -689,7 +734,7 @@ export default function PDAPage() {
                       )}
                     </div>
                   </div>
-                ))}
+                );})}
                 {operationalQueue.length === 0 ? (
                   <div className="somb-empty-state text-xs text-vault-textDim">No active tasks or bookings. Capture the next operation to start continuity tracking.</div>
                 ) : null}
