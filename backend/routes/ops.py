@@ -1,6 +1,7 @@
 from flask import Blueprint, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
+from backend.analytics.metrics import reset_external_api_calls_baseline
 from backend.extensions import socketio
 from backend.middleware.auth import require_roles
 from backend.models import ActivityLog
@@ -84,3 +85,18 @@ def pull_and_sync_system():
         },
     )
     return success_response(result)
+
+
+@ops_bp.post("/metrics/api-calls/reset")
+@jwt_required()
+@require_roles("super_admin", "admin")
+def reset_api_calls_metric():
+    actor_id = get_jwt_identity()
+    baseline = reset_external_api_calls_baseline()
+
+    ActivityService.log(
+        message="External API calls metric reset",
+        actor_id=actor_id,
+        meta={"baseline": baseline.isoformat()},
+    )
+    return success_response({"ok": True, "baseline": baseline.isoformat()})

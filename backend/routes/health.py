@@ -3,8 +3,8 @@ from time import time
 from flask import Blueprint
 from sqlalchemy import text
 from flask import current_app
+from backend.analytics.metrics import external_api_calls_total
 from backend.extensions import db
-from backend.models import ActivityLog
 from backend.sockets.events import socket_health
 from backend.services.container_metrics_service import ContainerMetricsService
 import redis
@@ -33,10 +33,6 @@ def system_health():
     except Exception:
         redis_ok = False
 
-    api_calls_query = ActivityLog.query.filter(ActivityLog.message.like("API call %"))
-    api_calls_query = api_calls_query.filter(~ActivityLog.message.like("API call % /api/v1/ops/%"))
-    api_calls_query = api_calls_query.filter(~ActivityLog.message.like("API call % /api/ops/%"))
-
     container_metrics = ContainerMetricsService.collect()
 
     return success_response(
@@ -49,7 +45,7 @@ def system_health():
                 "websocket": socket_health(),
             },
             "uptime_hint": int(time()),
-            "api_calls_total": api_calls_query.count(),
+            "api_calls_total": external_api_calls_total(),
             "containers": container_metrics,
         }
     )

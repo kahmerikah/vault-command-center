@@ -1,3 +1,5 @@
+from urllib.parse import urlparse
+
 from flask import Blueprint, g, request
 from flask_jwt_extended import get_jwt_identity, jwt_required, verify_jwt_in_request
 from backend.extensions import db
@@ -7,10 +9,40 @@ from backend.utils.responses import success_response
 gateway_bp = Blueprint("gateway", __name__)
 
 
+def _origin_host(value: str) -> str | None:
+    if not value:
+        return None
+    parsed = urlparse(value)
+    if not parsed.scheme:
+        return None
+    return parsed.netloc.lower()
+
+
+def _is_site_native_request() -> bool:
+    host = (request.host or "").lower()
+    allowed = {host}
+    for origin in request.app.config.get("ALLOWED_ORIGINS", []):
+        origin_host = _origin_host(origin)
+        if origin_host:
+            allowed.add(origin_host)
+
+    origin = _origin_host(request.headers.get("Origin", ""))
+    referer = _origin_host(request.headers.get("Referer", ""))
+
+    if origin and origin in allowed:
+        return True
+    if referer and referer in allowed:
+        return True
+    return False
+
+
 @gateway_bp.before_app_request
 def log_request():
     if not request.path.startswith("/api/"):
         return
+
+    is_site_native = _is_site_native_request()
+    message = f"Internal API call {request.method} {request.path}" if is_site_native else f"API call {request.method} {request.path}"
 
     actor_id = None
     try:
@@ -23,12 +55,15 @@ def log_request():
         ActivityLog(
             actor_id=actor_id,
             level="info",
-            message=f"API call {request.method} {request.path}",
+            message=message,
             meta={
                 "request_id": getattr(g, "request_id", "n/a"),
                 "method": request.method,
                 "path": request.path,
                 "ip": request.remote_addr or "",
+                "origin": request.headers.get("Origin", ""),
+                "referer": request.headers.get("Referer", ""),
+                "is_site_native": is_site_native,
             },
         )
     )

@@ -65,6 +65,10 @@ The SOMB Vault/
 A full read-only audit is documented in:
 - docs/existing_projects_audit.md
 
+## Operational Product Blueprint
+The implementation blueprint for designing SOMB Vault as an operational nervous system is documented in:
+- docs/operational_nervous_system_blueprint.md
+
 ## Local Development
 
 ### Option A: Docker (recommended)

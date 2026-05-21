@@ -1,6 +1,7 @@
 from flask import Blueprint, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from sqlalchemy import func
+from backend.analytics.metrics import external_api_calls_total
 from backend.models import ActivityLog, AnalyticsEvent, Session
 from backend.services.analytics_service import AnalyticsService
 from backend.utils.responses import success_response
@@ -24,13 +25,10 @@ def create_event():
 @analytics_bp.get("/summary")
 @jwt_required()
 def summary():
-    api_calls_query = ActivityLog.query.filter(ActivityLog.message.like("API call %"))
-    api_calls_query = api_calls_query.filter(~ActivityLog.message.like("API call % /api/v1/ops/%"))
-    api_calls_query = api_calls_query.filter(~ActivityLog.message.like("API call % /api/ops/%"))
     return success_response(
         {
             "events_total": AnalyticsEvent.query.count(),
-            "api_calls_total": api_calls_query.count(),
+            "api_calls_total": external_api_calls_total(),
             "active_sessions": Session.query.filter_by(is_revoked=False).count(),
             "failed_auth_total": ActivityLog.query.filter(ActivityLog.message.like("Failed login%")).count(),
         }

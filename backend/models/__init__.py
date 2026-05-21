@@ -11,6 +11,7 @@ from backend.models.payment import Payment, Subscription
 from backend.models.property import Property, PropertyComp
 from backend.models.rbac import Permission, Role
 from backend.models.session import Session
+from backend.models.system_state import SystemState
 from backend.models.user import User
 from backend.models.webhook_event import WebhookEvent
 
@@ -37,6 +38,7 @@ __all__ = [
     "RoutingEvent",
     "Session",
     "Subscription",
+    "SystemState",
     "User",
     "Wallet",
     "WebhookEvent",
