@@ -14,8 +14,15 @@ export default function FinancialPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("accounts");
   const [showAddRule, setShowAddRule] = useState(false);
-  const [ruleForm, setRuleForm] = useState({ name: "", destination_tag: "", allocation_pct: "", trigger: "income_received", priority: 50 });
-  const [routeForm, setRouteForm] = useState({ income_amount: "", trigger: "income_received" });
+  const [ruleForm, setRuleForm] = useState({
+    name: "",
+    destination_tag: "",
+    destination_account_id: "",
+    allocation_pct: "",
+    trigger: "income_received",
+    priority: 50,
+  });
+  const [routeForm, setRouteForm] = useState({ income_amount: "", trigger: "income_received", source_account_id: "" });
   const [routeResult, setRouteResult] = useState(null);
   const [plaidStatus, setPlaidStatus] = useState("");
   const [plaidError, setPlaidError] = useState("");
@@ -54,9 +61,20 @@ export default function FinancialPage() {
     setActionError("");
     setActionNotice("");
     try {
-      await api.post("/financial/allocation-rules", ruleForm);
+      const payload = {
+        ...ruleForm,
+        destination_account_id: ruleForm.destination_account_id || undefined,
+      };
+      await api.post("/financial/allocation-rules", payload);
       setShowAddRule(false);
-      setRuleForm({ name: "", destination_tag: "", allocation_pct: "", trigger: "income_received", priority: 50 });
+      setRuleForm({
+        name: "",
+        destination_tag: "",
+        destination_account_id: "",
+        allocation_pct: "",
+        trigger: "income_received",
+        priority: 50,
+      });
       await load();
       setActionNotice("Routing rule saved.");
     } catch (err) {
@@ -81,7 +99,17 @@ export default function FinancialPage() {
     setActionError("");
     setActionNotice("");
     try {
-      const res = await api.post("/financial/route", routeForm);
+      const payload = {
+        trigger: routeForm.trigger,
+        income_amount: typeof routeForm.income_amount === "string"
+          ? routeForm.income_amount.trim()
+          : routeForm.income_amount,
+      };
+      if (routeForm.source_account_id) {
+        payload.source_account_id = routeForm.source_account_id;
+      }
+
+      const res = await api.post("/financial/route", payload);
       setRouteResult(res.data?.data);
       await load();
       setActionNotice("Routing simulation complete.");
@@ -174,6 +202,10 @@ export default function FinancialPage() {
   }, [linkToken, plaidReady, linkLoading, exchangingToken, openPlaid]);
 
   const totalBalance = accounts.reduce((s, a) => s + parseFloat(a.balance_current || 0), 0);
+  const accountById = accounts.reduce((acc, account) => {
+    acc[account.id] = account;
+    return acc;
+  }, {});
 
   if (loading) return <div className="flex items-center justify-center h-64 font-mono text-slate-400 text-xs tracking-widest">loading financial os...</div>;
 
@@ -275,6 +307,29 @@ export default function FinancialPage() {
                       required />
                   </div>
                 ))}
+                <div className="flex flex-col gap-1">
+                  <label className="font-mono text-xs text-slate-400">Destination Account (optional)</label>
+                  <select
+                    value={ruleForm.destination_account_id}
+                    onChange={(e) => {
+                      const selectedId = e.target.value;
+                      const selectedAccount = accountById[selectedId];
+                      setRuleForm((prev) => ({
+                        ...prev,
+                        destination_account_id: selectedId,
+                        destination_tag: prev.destination_tag || selectedAccount?.routing_tag || prev.destination_tag,
+                      }));
+                    }}
+                    className="bg-black/30 border border-white/10 rounded px-3 py-2 font-mono text-xs text-white outline-none focus:border-emerald-500/50"
+                  >
+                    <option value="">No explicit account mapping</option>
+                    {accounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.account_name} ({account.routing_tag || "no tag"})
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div className="col-span-2 flex gap-2 justify-end">
                   <button type="button" onClick={() => setShowAddRule(false)} className="px-3 py-1.5 font-mono text-xs text-slate-400 hover:text-white transition">Cancel</button>
                   <button type="submit" className="px-4 py-1.5 rounded-lg bg-emerald-600/80 text-white font-mono text-xs hover:bg-emerald-600 transition">Save Rule</button>
@@ -290,6 +345,11 @@ export default function FinancialPage() {
                     <div>
                       <p className="font-mono text-sm text-white">{r.name}</p>
                       <p className="font-mono text-xs text-slate-500">{r.allocation_pct}% → {r.destination_tag} · trigger: {r.trigger}</p>
+                      {r.destination_account_id ? (
+                        <p className="font-mono text-[11px] text-emerald-300/80">
+                          mapped account: {accountById[r.destination_account_id]?.account_name || "account removed"}
+                        </p>
+                      ) : null}
                     </div>
                     <button type="button" onClick={() => toggleRule(r)}
                       className={`px-2 py-1 rounded font-mono text-xs ${r.is_active ? "text-emerald-400 border border-emerald-500/30" : "text-slate-500 border border-white/10"}`}>
@@ -304,12 +364,27 @@ export default function FinancialPage() {
           {/* Run router */}
           <GlassPanel>
             <p className="font-mono text-xs text-slate-400 mb-3">Simulate money routing for an income amount:</p>
-            <form onSubmit={runRouter} className="flex gap-3 items-end">
-              <div className="flex-1 flex flex-col gap-1">
+            <form onSubmit={runRouter} className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
+              <div className="flex flex-col gap-1">
                 <label className="font-mono text-xs text-slate-400">Income Amount ($)</label>
                 <input type="number" value={routeForm.income_amount}
                   onChange={e => setRouteForm(p => ({ ...p, income_amount: e.target.value }))}
                   className="bg-black/30 border border-white/10 rounded px-3 py-2 font-mono text-xs text-white outline-none focus:border-emerald-500/50" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="font-mono text-xs text-slate-400">Source Account (optional)</label>
+                <select
+                  value={routeForm.source_account_id}
+                  onChange={(e) => setRouteForm((p) => ({ ...p, source_account_id: e.target.value }))}
+                  className="bg-black/30 border border-white/10 rounded px-3 py-2 font-mono text-xs text-white outline-none focus:border-emerald-500/50"
+                >
+                  <option value="">Use only income amount</option>
+                  {accounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.account_name} · avail ${parseFloat(account.balance_available || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                    </option>
+                  ))}
+                </select>
               </div>
               <button type="submit" className="px-4 py-2 rounded-lg bg-emerald-600/80 text-white font-mono text-xs hover:bg-emerald-600 transition">Run</button>
             </form>

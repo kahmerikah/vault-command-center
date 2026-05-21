@@ -1,5 +1,5 @@
 """Financial OS routes: Plaid linking, accounts, transactions, allocation rules, money routing."""
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from flask import Blueprint, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from backend.extensions import db
@@ -148,15 +148,28 @@ def create_allocation_rule():
     for field in required:
         if not data.get(field):
             return error_response(f"{field} required", 400)
-    pct = Decimal(str(data["allocation_pct"]))
+    pct = _parse_decimal(data.get("allocation_pct"), "allocation_pct")
+    if pct is None:
+        return error_response("allocation_pct required", 400)
     if not (Decimal("0") < pct <= Decimal("100")):
         return error_response("allocation_pct must be between 0 and 100", 400)
+
+    destination_account_id = (data.get("destination_account_id") or "").strip() or None
+    if destination_account_id:
+        destination = FinancialAccount.query.filter_by(
+            id=destination_account_id,
+            user_id=user_id,
+            is_active=True,
+        ).first()
+        if not destination:
+            return error_response("destination_account_id not found", 404)
+
     rule = AllocationRule(
         user_id=user_id,
         name=data["name"],
         description=data.get("description"),
         destination_tag=data["destination_tag"],
-        destination_account_id=data.get("destination_account_id"),
+        destination_account_id=destination_account_id,
         allocation_pct=pct,
         min_balance_threshold=data.get("min_balance_threshold"),
         max_transfer_amount=data.get("max_transfer_amount"),
@@ -199,12 +212,28 @@ def delete_allocation_rule(rule_id):
 def run_routing():
     user_id = get_jwt_identity()
     data = request.json or {}
+
+    try:
+        income_amount = _parse_decimal(data.get("income_amount"), "income_amount")
+    except ValueError as exc:
+        return error_response(str(exc), 400)
+
+    source_account_id = (data.get("source_account_id") or "").strip() or None
+    if source_account_id:
+        source = FinancialAccount.query.filter_by(
+            id=source_account_id,
+            user_id=user_id,
+            is_active=True,
+        ).first()
+        if not source:
+            return error_response("source_account_id not found", 404)
+
     router = MoneyRouter(user_id=user_id)
     events = router.run(
         trigger=data.get("trigger", "income_received"),
-        income_amount=Decimal(str(data["income_amount"])) if data.get("income_amount") else None,
-        source_account_id=data.get("source_account_id"),
-        execute=bool(data.get("execute", False)),
+        income_amount=income_amount,
+        source_account_id=source_account_id,
+        execute=_parse_bool(data.get("execute", False)),
     )
     return success_response({"routing_events": events, "count": len(events)})
 
@@ -280,3 +309,27 @@ def _serialize_routing_event(e: RoutingEvent) -> dict:
         "dwolla_transfer_id": e.dwolla_transfer_id,
         "created_at": e.created_at.isoformat() if e.created_at else None,
     }
+
+
+def _parse_decimal(value, field_name: str):
+    if value is None:
+        return None
+
+    candidate = value
+    if isinstance(value, str):
+        candidate = value.strip().replace(",", "")
+        if not candidate:
+            return None
+
+    try:
+        return Decimal(str(candidate))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be a valid number") from exc
+
+
+def _parse_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)

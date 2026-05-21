@@ -106,24 +106,31 @@ export default function App() {
       try {
         if (currentAccessToken) {
           setAuthToken(currentAccessToken);
-          const me = await api.get("/auth/me");
-          if (mounted) {
-            setAuth({
-              accessToken: currentAccessToken,
-              refreshToken: currentRefreshToken,
-              user: currentUser || me.data?.data?.user || null,
-            });
+          try {
+            const me = await api.get("/auth/me");
+            if (mounted) {
+              setAuth({
+                accessToken: currentAccessToken,
+                refreshToken: currentRefreshToken,
+                user: currentUser || me.data?.data?.user || null,
+              });
+            }
+            return;
+          } catch {
+            if (!currentRefreshToken) {
+              throw new Error("access token expired and no refresh token available");
+            }
           }
-        } else {
-          const refreshed = await refreshSession(currentRefreshToken);
-          setAuthToken(refreshed.access_token);
-          if (mounted) {
-            setAuth({
-              accessToken: refreshed.access_token,
-              refreshToken: refreshed.refresh_token || currentRefreshToken,
-              user: refreshed.user || currentUser,
-            });
-          }
+        }
+
+        const refreshed = await refreshSession(currentRefreshToken);
+        setAuthToken(refreshed.access_token);
+        if (mounted) {
+          setAuth({
+            accessToken: refreshed.access_token,
+            refreshToken: refreshed.refresh_token || currentRefreshToken,
+            user: refreshed.user || currentUser,
+          });
         }
       } catch {
         if (mounted) {
