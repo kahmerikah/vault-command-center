@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import api, { setAuthToken } from "../lib/api";
+import { disconnectSocket } from "../lib/socket";
 import { useVaultStore } from "../store/useVaultStore";
+import AppShell from "../components/AppShell";
 import GlassPanel from "../components/GlassPanel";
 import MetricCard from "../components/MetricCard";
 
@@ -95,7 +97,7 @@ function extractTags(text) {
 }
 
 export default function PropertyPage() {
-  const { accessToken, clearAuth } = useVaultStore();
+  const { accessToken, refreshToken, user, clearAuth } = useVaultStore();
 
   const [properties, setProperties] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -138,6 +140,21 @@ export default function PropertyPage() {
 
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+
+  const handleLogout = async () => {
+    try {
+      if (refreshToken) {
+        await api.post("/auth/logout", {}, { headers: { Authorization: `Bearer ${refreshToken}` } });
+      }
+    } catch {
+      // Keep logout reliable.
+    } finally {
+      clearAuth();
+      setAuthToken("");
+      disconnectSocket();
+      window.location.assign("/login");
+    }
+  };
 
   const loadProperties = useCallback(async () => {
     if (!accessToken) {
@@ -391,20 +408,23 @@ export default function PropertyPage() {
 
   if (loading) {
     return (
-      <div className="p-6 space-y-4">
-        <div className="h-10 rounded-xl bg-white/5 animate-pulse" />
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[1, 2, 3, 4].map((n) => (
-            <div key={n} className="h-20 rounded-xl bg-white/5 animate-pulse" />
-          ))}
+      <AppShell user={user} onLogout={handleLogout} title="property intelligence">
+        <div className="p-6 space-y-4">
+          <div className="h-10 rounded-xl bg-white/5 animate-pulse" />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[1, 2, 3, 4].map((n) => (
+              <div key={n} className="h-20 rounded-xl bg-white/5 animate-pulse" />
+            ))}
+          </div>
+          <div className="h-52 rounded-xl bg-white/5 animate-pulse" />
+          <div className="h-72 rounded-xl bg-white/5 animate-pulse" />
         </div>
-        <div className="h-52 rounded-xl bg-white/5 animate-pulse" />
-        <div className="h-72 rounded-xl bg-white/5 animate-pulse" />
-      </div>
+      </AppShell>
     );
   }
 
   return (
+    <AppShell user={user} onLogout={handleLogout} title="property intelligence">
     <div className="p-6 space-y-5">
       <div className="flex items-center justify-between gap-3">
         <div>
@@ -743,5 +763,6 @@ export default function PropertyPage() {
         </GlassPanel>
       </div>
     </div>
+    </AppShell>
   );
 }

@@ -282,8 +282,11 @@ export default function PDAPage() {
   const now = new Date();
   const todayKey = dayKey(now);
   const todayBookings = bookingsByDay.get(todayKey) || [];
-  const unfinishedTasks = todos.filter((todo) => !todo.is_archived);
-  const unfinishedBookings = bookings.filter((booking) => booking.status !== "completed");
+  const unfinishedTasks = useMemo(() => todos.filter((todo) => !todo.is_archived), [todos]);
+  const unfinishedBookings = useMemo(
+    () => bookings.filter((booking) => booking.status !== "completed"),
+    [bookings]
+  );
 
   const deploymentSignals = useMemo(
     () =>
@@ -326,7 +329,16 @@ export default function PDAPage() {
   }, [unfinishedTasks, unfinishedBookings]);
 
   useEffect(() => {
-    setQueueOrder(operationalQueue.map((item) => `${item.type}-${item.id}`));
+    const nextKeys = operationalQueue.map((item) => `${item.type}-${item.id}`);
+    setQueueOrder((prev) => {
+      const retained = prev.filter((key) => nextKeys.includes(key));
+      const appended = nextKeys.filter((key) => !retained.includes(key));
+      const merged = [...retained, ...appended];
+      if (merged.length === prev.length && merged.every((key, index) => key === prev[index])) {
+        return prev;
+      }
+      return merged;
+    });
   }, [operationalQueue]);
 
   const orderedQueue = useMemo(() => {
