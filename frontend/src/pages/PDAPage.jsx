@@ -156,9 +156,6 @@ export default function PDAPage() {
   const [night, setNight] = useState(null);
   const [history, setHistory] = useState([]);
   const [activity, setActivity] = useState([]);
-  const [notifications, setNotifications] = useState([]);
-  const [payments, setPayments] = useState([]);
-  const [propertyNotes, setPropertyNotes] = useState([]);
   const [health, setHealth] = useState(null);
 
   const [zip, setZip] = useState("90001");
@@ -220,10 +217,7 @@ export default function PDAPage() {
         historyRes,
         todosRes,
         activityRes,
-        notificationsRes,
-        paymentsRes,
         healthRes,
-        propertyRes,
       ] = await Promise.allSettled([
         api.get("/bookings", { params: { limit: 300 } }),
         api.get(`/briefing/morning?zip=${zip}`),
@@ -231,10 +225,7 @@ export default function PDAPage() {
         api.get("/briefing/history", { params: { limit: 12 } }),
         api.get("/knowledge", { params: { category: "todo", limit: 200 } }),
         api.get("/gateway/activity", { params: { limit: 50 } }),
-        api.get("/notifications", { params: { limit: 30 } }),
-        api.get("/payments", { params: { limit: 20 } }),
         api.get("/health/system"),
-        api.get("/knowledge", { params: { category: "property", limit: 30 } }),
       ]);
 
       setBookings(bookingsRes.status === "fulfilled" ? bookingsRes.value.data?.data?.items || [] : []);
@@ -243,13 +234,10 @@ export default function PDAPage() {
       setHistory(historyRes.status === "fulfilled" ? historyRes.value.data?.data?.items || [] : []);
       setTodos(todosRes.status === "fulfilled" ? (todosRes.value.data?.data?.items || []).map(parseTodoItem) : []);
       setActivity(activityRes.status === "fulfilled" ? activityRes.value.data?.data?.items || [] : []);
-      setNotifications(notificationsRes.status === "fulfilled" ? notificationsRes.value.data?.data?.items || [] : []);
-      setPayments(paymentsRes.status === "fulfilled" ? paymentsRes.value.data?.data?.items || [] : []);
       setHealth(healthRes.status === "fulfilled" ? healthRes.value.data?.data || null : null);
-      setPropertyNotes(propertyRes.status === "fulfilled" ? propertyRes.value.data?.data?.items || [] : []);
 
       if (
-        [bookingsRes, morningRes, nightRes, historyRes, todosRes, activityRes, notificationsRes, paymentsRes, healthRes, propertyRes].some(
+        [bookingsRes, morningRes, nightRes, historyRes, todosRes, activityRes, healthRes].some(
           (r) => r.status === "rejected"
         )
       ) {
@@ -365,48 +353,6 @@ export default function PDAPage() {
       return arr;
     });
   };
-
-  const operationalFeed = useMemo(() => {
-    const fromActivity = activity.map((item) => ({
-      id: `activity-${item.id}`,
-      kind: "activity",
-      label: item.level || "info",
-      title: item.message,
-      detail: item.meta?.path || item.meta?.method || "Operational activity",
-      createdAt: item.created_at,
-    }));
-
-    const fromNotifications = notifications.map((item) => ({
-      id: `notification-${item.id}`,
-      kind: "notification",
-      label: item.is_read ? "read" : "unread",
-      title: item.title,
-      detail: item.body,
-      createdAt: item.created_at,
-    }));
-
-    const fromPayments = payments.slice(0, 8).map((item) => ({
-      id: `payment-${item.id}`,
-      kind: "payment",
-      label: item.status,
-      title: `$${Number(item.amount || 0).toFixed(2)} ${String(item.currency || "usd").toUpperCase()}`,
-      detail: `Payment ${item.status}`,
-      createdAt: item.created_at,
-    }));
-
-    const fromProperty = propertyNotes.slice(0, 8).map((item) => ({
-      id: `property-${item.id}`,
-      kind: "property",
-      label: item.kind || "note",
-      title: item.title,
-      detail: "Property opportunity",
-      createdAt: item.created_at,
-    }));
-
-    return [...fromActivity, ...fromNotifications, ...fromPayments, ...fromProperty].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-  }, [activity, notifications, payments, propertyNotes]);
 
   const handleDaySelect = (key) => {
     setSelectedDay(key);
@@ -893,35 +839,6 @@ export default function PDAPage() {
           </div>
 
           <div className="space-y-4">
-            <GlassPanel title="Realtime Operational Feed" className="p-3">
-              <div className="mb-2 grid grid-cols-2 gap-2 text-xs">
-                <div className="rounded border border-vault-accent/20 bg-black/20 p-2">
-                  <p className="text-vault-textDim">Unread Alerts</p>
-                  <p className="text-base text-vault-text">{notifications.filter((n) => !n.is_read).length}</p>
-                </div>
-                <div className="rounded border border-vault-accent/20 bg-black/20 p-2">
-                  <p className="text-vault-textDim">Active Workflows</p>
-                  <p className="text-base text-vault-text">{unfinishedBookings.length + unfinishedTasks.length}</p>
-                </div>
-              </div>
-
-              <div className="max-h-[32rem] space-y-2 overflow-auto text-xs">
-                {operationalFeed.slice(0, 40).map((entry) => (
-                  <div key={entry.id} className="rounded border border-vault-accent/20 bg-black/20 px-2 py-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-vault-text">{entry.title}</span>
-                      <span className="rounded border border-vault-accent/30 px-1.5 py-0.5 uppercase tracking-[0.14em] text-vault-textDim">{entry.kind}</span>
-                    </div>
-                    <p className="mt-1 text-vault-textDim">{entry.detail}</p>
-                    <p className="mt-1 text-[10px] text-vault-textDim">{new Date(entry.createdAt).toLocaleString()}</p>
-                  </div>
-                ))}
-                {operationalFeed.length === 0 ? (
-                  <div className="somb-empty-state text-vault-textDim">No live operational events yet. Capture tasks, schedule blocks, or trigger activity to populate feed.</div>
-                ) : null}
-              </div>
-            </GlassPanel>
-
             <GlassPanel title="Night Briefing Snapshot" className="p-3">
               <div className="space-y-2 text-xs">
                 <div className="flex items-center justify-between">
