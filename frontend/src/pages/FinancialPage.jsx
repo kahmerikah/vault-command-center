@@ -1,199 +1,156 @@
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlaidLink } from "react-plaid-link";
-import api, { setAuthToken } from "../lib/api";
-import { useVaultStore } from "../store/useVaultStore";
+import AppShell from "../components/AppShell";
 import GlassPanel from "../components/GlassPanel";
-import MetricCard from "../components/MetricCard";
+import api, { setAuthToken } from "../lib/api";
+import { disconnectSocket } from "../lib/socket";
+import { useVaultStore } from "../store/useVaultStore";
 
 export default function FinancialPage() {
-  const { accessToken, clearAuth } = useVaultStore();
+  const { accessToken, refreshToken, user, clearAuth } = useVaultStore();
+
   const [accounts, setAccounts] = useState([]);
   const [rules, setRules] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [routing, setRouting] = useState([]);
+
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("accounts");
   const [showAddRule, setShowAddRule] = useState(false);
+
   const [ruleForm, setRuleForm] = useState({
     name: "",
     destination_tag: "",
     destination_account_id: "",
-    allocation_pct: "",
+    allocation_pct: "20",
     trigger: "income_received",
     priority: 50,
   });
-  const [routeForm, setRouteForm] = useState({ income_amount: "", trigger: "income_received", source_account_id: "" });
+  const [routeForm, setRouteForm] = useState({
+    income_amount: "",
+    trigger: "income_received",
+    source_account_id: "",
+  });
+
   const [routeResult, setRouteResult] = useState(null);
+
   const [plaidStatus, setPlaidStatus] = useState("");
   const [plaidError, setPlaidError] = useState("");
+  const [actionNotice, setActionNotice] = useState("");
   const [actionError, setActionError] = useState("");
+
   const [linkToken, setLinkToken] = useState("");
   const [linkLoading, setLinkLoading] = useState(false);
   const [exchangingToken, setExchangingToken] = useState(false);
-  const [actionNotice, setActionNotice] = useState("");
+
+  const [txSearch, setTxSearch] = useState("");
+  const [txFilter, setTxFilter] = useState("all");
+  const [txSort, setTxSort] = useState("date_desc");
+
+  const searchRef = useRef(null);
+  const routeRef = useRef(null);
+
+  const handleLogout = useCallback(async () => {
+    try {
+      if (refreshToken) {
+        await api.post("/auth/logout", {}, { headers: { Authorization: `Bearer ${refreshToken}` } });
+      }
+    } catch {
+      // Keep local logout deterministic even if API logout fails.
+    } finally {
+      clearAuth();
+      setAuthToken("");
+      disconnectSocket();
+      window.location.assign("/login");
+    }
+  }, [clearAuth, refreshToken]);
 
   const load = useCallback(async () => {
     if (!accessToken) return;
     setAuthToken(accessToken);
     setLoading(true);
+
     try {
-      const [accRes, rulesRes, txRes, routingRes] = await Promise.allSettled([
+      const [accountsRes, rulesRes, txRes, routingRes] = await Promise.allSettled([
         api.get("/financial/accounts"),
         api.get("/financial/allocation-rules"),
-        api.get("/financial/transactions?limit=30"),
-        api.get("/financial/routing-history?limit=20"),
+        api.get("/financial/transactions?limit=200"),
+        api.get("/financial/routing-history?limit=40"),
       ]);
-      setAccounts(accRes.status === 'fulfilled' ? accRes.value.data?.data?.items || [] : []);
-      setRules(rulesRes.status === 'fulfilled' ? rulesRes.value.data?.data?.items || [] : []);
-      setTransactions(txRes.status === 'fulfilled' ? txRes.value.data?.data?.items || [] : []);
-      setRouting(routingRes.status === 'fulfilled' ? routingRes.value.data?.data?.items || [] : []);
+
+      setAccounts(accountsRes.status === "fulfilled" ? accountsRes.value.data?.data?.items || [] : []);
+      setRules(rulesRes.status === "fulfilled" ? rulesRes.value.data?.data?.items || [] : []);
+      setTransactions(txRes.status === "fulfilled" ? txRes.value.data?.data?.items || [] : []);
+      setRouting(routingRes.status === "fulfilled" ? routingRes.value.data?.data?.items || [] : []);
     } catch (err) {
-      if (err?.response?.status === 401) clearAuth();
+      if (err?.response?.status === 401) {
+        clearAuth();
+      }
     } finally {
       setLoading(false);
     }
   }, [accessToken, clearAuth]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  const addRule = async (e) => {
-    e.preventDefault();
-    setActionError("");
+  const syncPlaid = useCallback(async () => {
+    setPlaidStatus("");
+    setPlaidError("");
     setActionNotice("");
-    try {
-      const payload = {
-        ...ruleForm,
-        destination_account_id: ruleForm.destination_account_id || undefined,
-      };
-      await api.post("/financial/allocation-rules", payload);
-      setShowAddRule(false);
-      setRuleForm({
-        name: "",
-        destination_tag: "",
-        destination_account_id: "",
-        allocation_pct: "",
-        trigger: "income_received",
-        priority: 50,
-      });
-      await load();
-      setActionNotice("Routing rule saved.");
-    } catch (err) {
-      setActionError(err?.response?.data?.error || "Unable to save rule.");
-    }
-  };
-
-  const toggleRule = async (rule) => {
     setActionError("");
-    setActionNotice("");
     try {
-      await api.patch(`/financial/allocation-rules/${rule.id}`, { is_active: !rule.is_active });
-      await load();
-      setActionNotice(`Rule ${!rule.is_active ? "activated" : "paused"}.`);
-    } catch (err) {
-      setActionError(err?.response?.data?.error || "Unable to update rule state.");
-    }
-  };
-
-  const runRouter = async (e) => {
-    e.preventDefault();
-    setActionError("");
-    setActionNotice("");
-    try {
-      const payload = {
-        trigger: routeForm.trigger,
-        income_amount: typeof routeForm.income_amount === "string"
-          ? routeForm.income_amount.trim()
-          : routeForm.income_amount,
-      };
-      if (routeForm.source_account_id) {
-        payload.source_account_id = routeForm.source_account_id;
-      }
-
-      const res = await api.post("/financial/route", payload);
-      setRouteResult(res.data?.data);
-      await load();
-      setActionNotice("Routing simulation complete.");
-    } catch (err) {
-      setActionError(err?.response?.data?.error || "Unable to run router simulation.");
-    }
-  };
-
-  const syncPlaid = async () => {
-    try {
-      setActionNotice("");
-      setPlaidStatus("Syncing Plaid transactions...");
-      await api.post("/financial/plaid/sync", { days: 30 });
-      setPlaidError("");
-      setPlaidStatus("Plaid sync complete.");
+      await api.post("/financial/plaid/sync");
+      setPlaidStatus("Plaid transactions synced.");
       await load();
     } catch (err) {
-      setPlaidStatus("");
       setPlaidError(err?.response?.data?.error || "Plaid sync failed.");
     }
-  };
+  }, [load]);
 
-  const onPlaidSuccess = async (publicToken) => {
-    setExchangingToken(true);
-    try {
-      setActionNotice("");
-      setPlaidError("");
-      setPlaidStatus("Exchanging Plaid token...");
-      await api.post("/financial/plaid/exchange", { public_token: publicToken });
-      setPlaidStatus("Bank linked. Refreshing balances and transactions...");
-      await api.post("/financial/plaid/sync", { days: 30 });
-      await api.post("/financial/plaid/refresh-balances", {});
-      await load();
-      setPlaidStatus("Bank linked successfully.");
-      setActionNotice("Bank account linked and synced.");
-    } catch (err) {
-      setPlaidStatus("");
-      setPlaidError(err?.response?.data?.error || "Bank link token exchange failed.");
-    } finally {
-      setExchangingToken(false);
-      setLinkToken("");
-    }
-  };
-
-  const onPlaidExit = (err) => {
-    if (!err) {
-      return;
-    }
+  const linkBank = useCallback(async () => {
     setPlaidStatus("");
-    setPlaidError(err.error_message || "Plaid flow exited with an error.");
-  };
-
-  const { open: openPlaid, ready: plaidReady } = usePlaidLink({
-    token: linkToken || null,
-    onSuccess: onPlaidSuccess,
-    onExit: onPlaidExit,
-  });
-
-  const linkBank = async () => {
-    if (linkLoading || exchangingToken) {
-      return;
-    }
+    setPlaidError("");
     setLinkLoading(true);
     try {
-      setActionNotice("");
-      setPlaidStatus("");
-      setPlaidError("");
-      setPlaidStatus("Creating Plaid link token...");
-      const res = await api.get("/financial/plaid/link-token");
-      const token = res?.data?.data?.link_token;
-      if (token) {
-        setLinkToken(token);
-        setPlaidStatus("Link token created. Opening Plaid...");
-      } else {
-        setPlaidStatus("");
-        setPlaidError("Link token endpoint returned no token.");
-      }
+      const response = await api.get("/financial/plaid/link-token");
+      setLinkToken(response.data?.data?.link_token || "");
     } catch (err) {
-      setPlaidStatus("");
-      setPlaidError(err?.response?.data?.error || "Unable to create Plaid link token.");
+      setPlaidError(err?.response?.data?.error || "Failed to create link token.");
     } finally {
       setLinkLoading(false);
     }
-  };
+  }, []);
+
+  const exchangePublicToken = useCallback(
+    async (publicToken) => {
+      setExchangingToken(true);
+      setPlaidError("");
+      setPlaidStatus("");
+      try {
+        await api.post("/financial/plaid/exchange", { public_token: publicToken });
+        setPlaidStatus("Bank account linked.");
+        await load();
+      } catch (err) {
+        setPlaidError(err?.response?.data?.error || "Token exchange failed.");
+      } finally {
+        setExchangingToken(false);
+        setLinkToken("");
+      }
+    },
+    [load]
+  );
+
+  const { open: openPlaid, ready: plaidReady } = usePlaidLink({
+    token: linkToken || null,
+    onSuccess: (publicToken) => exchangePublicToken(publicToken),
+    onExit: (_, metadata) => {
+      if (metadata?.status === "requires_questions") {
+        setPlaidError("Plaid requires additional user verification.");
+      }
+      setLinkToken("");
+    },
+  });
 
   useEffect(() => {
     if (linkToken && plaidReady && !linkLoading && !exchangingToken) {
@@ -201,250 +158,562 @@ export default function FinancialPage() {
     }
   }, [linkToken, plaidReady, linkLoading, exchangingToken, openPlaid]);
 
-  const totalBalance = accounts.reduce((s, a) => s + parseFloat(a.balance_current || 0), 0);
-  const accountById = accounts.reduce((acc, account) => {
-    acc[account.id] = account;
-    return acc;
-  }, {});
+  const addRule = useCallback(
+    async (event) => {
+      event.preventDefault();
+      setActionError("");
+      setActionNotice("");
+      try {
+        await api.post("/financial/allocation-rules", {
+          ...ruleForm,
+          allocation_pct: Number(ruleForm.allocation_pct || 0),
+          priority: Number(ruleForm.priority || 50),
+          destination_account_id: ruleForm.destination_account_id || null,
+        });
+        setActionNotice("Allocation rule saved.");
+        setRuleForm((prev) => ({ ...prev, name: "", destination_tag: "", destination_account_id: "" }));
+        setShowAddRule(false);
+        await load();
+      } catch (err) {
+        setActionError(err?.response?.data?.error || "Could not save rule.");
+      }
+    },
+    [load, ruleForm]
+  );
 
-  if (loading) return <div className="flex items-center justify-center h-64 font-mono text-slate-400 text-xs tracking-widest">loading financial os...</div>;
+  const toggleRule = useCallback(
+    async (rule) => {
+      setActionError("");
+      setActionNotice("");
+      try {
+        await api.patch(`/financial/allocation-rules/${rule.id}`, { is_active: !rule.is_active });
+        setActionNotice(rule.is_active ? "Rule paused." : "Rule activated.");
+        await load();
+      } catch (err) {
+        setActionError(err?.response?.data?.error || "Could not update rule state.");
+      }
+    },
+    [load]
+  );
+
+  const runRouter = useCallback(
+    async (event) => {
+      event.preventDefault();
+      setActionError("");
+      setActionNotice("");
+      setRouteResult(null);
+
+      try {
+        const response = await api.post("/financial/route", {
+          income_amount: Number(routeForm.income_amount || 0),
+          trigger: routeForm.trigger,
+          source_account_id: routeForm.source_account_id || null,
+        });
+        setRouteResult(response.data?.data || null);
+        setActionNotice("Routing simulation completed.");
+        await load();
+      } catch (err) {
+        setActionError(err?.response?.data?.error || "Routing simulation failed.");
+      }
+    },
+    [load, routeForm]
+  );
+
+  useEffect(() => {
+    const handleKeys = (event) => {
+      if (event.key === "/" && !event.ctrlKey && !event.metaKey) {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+      if (event.altKey && event.key.toLowerCase() === "r") {
+        event.preventDefault();
+        routeRef.current?.focus();
+      }
+      if (event.altKey && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        syncPlaid();
+      }
+    };
+    window.addEventListener("keydown", handleKeys);
+    return () => window.removeEventListener("keydown", handleKeys);
+  }, [syncPlaid]);
+
+  const accountById = useMemo(() => {
+    const map = {};
+    accounts.forEach((account) => {
+      map[account.id] = account;
+    });
+    return map;
+  }, [accounts]);
+
+  const parsedTransactions = useMemo(
+    () =>
+      transactions.map((tx) => {
+        const when = tx.transaction_date ? new Date(tx.transaction_date) : new Date(tx.created_at || Date.now());
+        return {
+          ...tx,
+          numericAmount: Number(tx.amount || 0),
+          when,
+        };
+      }),
+    [transactions]
+  );
+
+  const filteredTransactions = useMemo(() => {
+    const search = txSearch.trim().toLowerCase();
+    let list = [...parsedTransactions];
+
+    if (search) {
+      list = list.filter((tx) => {
+        const haystack = `${tx.name || ""} ${tx.merchant_name || ""} ${tx.category || ""}`.toLowerCase();
+        return haystack.includes(search);
+      });
+    }
+
+    if (txFilter === "income") list = list.filter((tx) => tx.numericAmount > 0);
+    if (txFilter === "expense") list = list.filter((tx) => tx.numericAmount < 0);
+    if (txFilter === "recurring") list = list.filter((tx) => tx.is_recurring);
+
+    if (txSort === "amount_desc") list.sort((a, b) => Math.abs(b.numericAmount) - Math.abs(a.numericAmount));
+    if (txSort === "amount_asc") list.sort((a, b) => Math.abs(a.numericAmount) - Math.abs(b.numericAmount));
+    if (txSort === "date_desc") list.sort((a, b) => b.when.getTime() - a.when.getTime());
+
+    return list;
+  }, [parsedTransactions, txSearch, txFilter, txSort]);
+
+  const metrics = useMemo(() => {
+    const availableCash = accounts
+      .filter((account) => account.account_type !== "credit")
+      .reduce((sum, account) => sum + Number(account.balance_available || 0), 0);
+
+    const totalLiquidity = accounts.reduce((sum, account) => sum + Number(account.balance_current || 0), 0);
+    const debtExposure = accounts
+      .filter((account) => account.account_type === "credit")
+      .reduce((sum, account) => sum + Math.max(Number(account.balance_current || 0), 0), 0);
+
+    const now = new Date();
+    const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const upcomingBills = parsedTransactions
+      .filter((tx) => tx.when >= now && tx.when <= in7Days && tx.numericAmount < 0)
+      .reduce((sum, tx) => sum + Math.abs(tx.numericAmount), 0);
+
+    const incomingSoon = parsedTransactions
+      .filter((tx) => tx.when >= now && tx.when <= in7Days && tx.numericAmount > 0)
+      .reduce((sum, tx) => sum + tx.numericAmount, 0);
+
+    const reserveTarget = Math.max(availableCash * 0.2, 1000);
+    const reservePct = availableCash > 0 ? Math.round((reserveTarget / availableCash) * 100) : 0;
+    const safeToSpend = Math.max(availableCash - upcomingBills - reserveTarget, 0);
+
+    const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const previousWeekStart = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+    const currentWeekNet = parsedTransactions.filter((tx) => tx.when >= weekStart).reduce((sum, tx) => sum + tx.numericAmount, 0);
+    const previousWeekNet = parsedTransactions
+      .filter((tx) => tx.when >= previousWeekStart && tx.when < weekStart)
+      .reduce((sum, tx) => sum + tx.numericAmount, 0);
+
+    const burnTrendPct = previousWeekNet === 0 ? 0 : Math.round(((currentWeekNet - previousWeekNet) / Math.abs(previousWeekNet)) * 100);
+
+    const savingsRulePct = rules
+      .filter((rule) => rule.is_active && ["savings", "invest", "reserve"].some((needle) => String(rule.destination_tag || "").toLowerCase().includes(needle)))
+      .reduce((sum, rule) => sum + Number(rule.allocation_pct || 0), 0);
+
+    return {
+      totalLiquidity,
+      availableCash,
+      debtExposure,
+      upcomingBills,
+      incomingSoon,
+      reservePct,
+      safeToSpend,
+      burnTrendPct,
+      savingsRulePct,
+    };
+  }, [accounts, parsedTransactions, rules]);
+
+  const flowMap = useMemo(() => {
+    const active = rules.filter((rule) => rule.is_active);
+    const total = active.reduce((sum, rule) => sum + Number(rule.allocation_pct || 0), 0) || 1;
+    return active.map((rule) => ({
+      ...rule,
+      pct: Number(rule.allocation_pct || 0),
+      width: Math.max(8, Math.round((Number(rule.allocation_pct || 0) / total) * 100)),
+    }));
+  }, [rules]);
+
+  const billsDue = useMemo(
+    () =>
+      parsedTransactions
+        .filter((tx) => tx.numericAmount < 0)
+        .sort((a, b) => a.when.getTime() - b.when.getTime())
+        .slice(0, 6),
+    [parsedTransactions]
+  );
+
+  const unusualSpending = useMemo(() => {
+    const expenses = parsedTransactions.filter((tx) => tx.numericAmount < 0).map((tx) => Math.abs(tx.numericAmount));
+    if (!expenses.length) return [];
+
+    const avg = expenses.reduce((sum, amount) => sum + amount, 0) / expenses.length;
+    return parsedTransactions
+      .filter((tx) => tx.numericAmount < 0 && Math.abs(tx.numericAmount) > avg * 2)
+      .slice(0, 4);
+  }, [parsedTransactions]);
+
+  const hostingExpenses = useMemo(
+    () =>
+      parsedTransactions
+        .filter((tx) => {
+          const text = `${tx.name || ""} ${tx.merchant_name || ""}`.toLowerCase();
+          return text.includes("aws") || text.includes("vercel") || text.includes("digitalocean") || text.includes("cloudflare") || text.includes("github");
+        })
+        .slice(0, 4),
+    [parsedTransactions]
+  );
+
+  const financeTimeline = useMemo(() => {
+    const txEvents = filteredTransactions.slice(0, 10).map((tx) => ({
+      id: `tx-${tx.id}`,
+      title: tx.name,
+      detail: `${tx.numericAmount < 0 ? "-" : "+"}$${Math.abs(tx.numericAmount).toFixed(2)} · ${tx.category || "uncategorized"}`,
+      when: tx.when,
+      tone: tx.numericAmount < 0 ? "text-red-300" : "text-emerald-300",
+    }));
+
+    const routingEvents = routing.slice(0, 8).map((event) => ({
+      id: `rt-${event.id}`,
+      title: `Routing ${event.destination_tag}`,
+      detail: `$${Number(event.amount_routed || 0).toFixed(2)} · ${event.status}`,
+      when: new Date(event.created_at || Date.now()),
+      tone: event.status === "failed" ? "text-red-300" : event.status === "queued" ? "text-amber-300" : "text-emerald-300",
+    }));
+
+    return [...txEvents, ...routingEvents]
+      .sort((a, b) => b.when.getTime() - a.when.getTime())
+      .slice(0, 14);
+  }, [filteredTransactions, routing]);
+
+  if (loading) {
+    return (
+      <AppShell user={user} onLogout={handleLogout} title="financial os">
+        <div className="flex h-64 items-center justify-center font-mono text-xs tracking-widest text-slate-400">loading financial os...</div>
+      </AppShell>
+    );
+  }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="font-mono text-lg tracking-widest text-white uppercase">Financial OS</h1>
-        <div className="flex gap-2">
-          <button type="button" onClick={syncPlaid} className="px-3 py-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 font-mono text-xs tracking-wider hover:bg-emerald-500/20 transition">
-            Sync Plaid
-          </button>
-          <button
-            type="button"
-            onClick={linkBank}
-            disabled={linkLoading || exchangingToken}
-            className="px-3 py-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-400 font-mono text-xs tracking-wider hover:bg-blue-500/20 transition disabled:opacity-50"
-          >
-            {linkLoading ? "Preparing..." : exchangingToken ? "Linking..." : "Link Bank"}
-          </button>
-        </div>
-      </div>
+    <AppShell user={user} onLogout={handleLogout} title="financial os">
+      <div className="space-y-4">
+        <GlassPanel title="Treasury Snapshot" className="p-3">
+          <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6">
+            <Metric label="Liquidity" value={`$${metrics.totalLiquidity.toLocaleString("en-US", { minimumFractionDigits: 2 })}`} tone="text-vault-text" />
+            <Metric label="Safe To Spend" value={`$${metrics.safeToSpend.toLocaleString("en-US", { minimumFractionDigits: 2 })}`} tone="text-emerald-300" />
+            <Metric label="Upcoming Bills" value={`$${metrics.upcomingBills.toLocaleString("en-US", { minimumFractionDigits: 2 })}`} tone="text-amber-300" />
+            <Metric label="Incoming (7d)" value={`$${metrics.incomingSoon.toLocaleString("en-US", { minimumFractionDigits: 2 })}`} tone="text-cyan-300" />
+            <Metric label="Savings Rate" value={`${metrics.savingsRulePct.toFixed(0)}%`} tone="text-vault-text" />
+            <Metric
+              label="Burn Trend WoW"
+              value={`${metrics.burnTrendPct > 0 ? "+" : ""}${metrics.burnTrendPct}%`}
+              tone={metrics.burnTrendPct <= 0 ? "text-emerald-300" : "text-amber-300"}
+            />
+          </div>
 
-      {plaidStatus ? <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-mono text-emerald-200">{plaidStatus}</div> : null}
-      {plaidError ? <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-mono text-red-200">{plaidError}</div> : null}
-      {actionNotice ? <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-mono text-emerald-200">{actionNotice}</div> : null}
-      {actionError ? <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-mono text-red-200">{actionError}</div> : null}
-
-      {!accounts.length && !plaidStatus && !plaidError ? (
-        <div className="somb-empty-state">
-          <p className="font-mono text-xs text-slate-300">No linked financial accounts detected.</p>
-          <p className="mt-1 font-mono text-xs text-slate-500">Next steps: Link Bank via Plaid, then run Sync Plaid to import balances and transactions.</p>
-        </div>
-      ) : null}
-
-      {/* KPI Row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <MetricCard label="Total Balance" value={`$${totalBalance.toLocaleString("en-US", { minimumFractionDigits: 2 })}`} status="ok" />
-        <MetricCard label="Accounts" value={accounts.length} status="ok" />
-        <MetricCard label="Routing Rules" value={rules.filter(r => r.is_active).length} status={rules.length > 0 ? "ok" : "warn"} />
-        <MetricCard label="Transactions" value={transactions.length} status="ok" />
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-white/10">
-        {["accounts", "rules", "transactions", "routing"].map(tab => (
-          <button key={tab} type="button" onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 font-mono text-xs tracking-widest uppercase transition ${activeTab === tab ? "text-white border-b-2 border-emerald-500" : "text-slate-500 hover:text-slate-300"}`}>
-            {tab}
-          </button>
-        ))}
-      </div>
-
-      {/* Accounts Tab */}
-      {activeTab === "accounts" && (
-        <GlassPanel>
-          {accounts.length === 0 ? (
-            <div className="text-center py-12 text-slate-500 font-mono text-xs space-y-1">
-              <p>No accounts linked yet.</p>
-              <p>Use Link Bank to open Plaid, then Sync Plaid to hydrate account and transaction data.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-white/5">
-              {accounts.map(a => (
-                <div key={a.id} className="flex items-center justify-between py-3 px-1">
-                  <div>
-                    <p className="font-mono text-sm text-white">{a.account_name}</p>
-                    <p className="font-mono text-xs text-slate-500">{a.institution_name} · {a.account_type} {a.mask ? `••${a.mask}` : ""}</p>
-                    {a.routing_tag && <span className="text-xs text-emerald-400/70">→ {a.routing_tag}</span>}
-                  </div>
-                  <div className="text-right">
-                    <p className="font-mono text-sm text-white">${parseFloat(a.balance_current || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</p>
-                    <p className="font-mono text-xs text-slate-500">avail: ${parseFloat(a.balance_available || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </GlassPanel>
-      )}
-
-      {/* Rules Tab */}
-      {activeTab === "rules" && (
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <p className="font-mono text-xs text-slate-400">Allocation rules run when a trigger fires and route a percentage of income.</p>
-            <button type="button" onClick={() => setShowAddRule(!showAddRule)} className="px-3 py-1.5 rounded-lg border border-white/10 text-white font-mono text-xs hover:bg-white/5 transition">
-              + Add Rule
+          <div className="mt-3 grid gap-2 md:grid-cols-[1fr_auto_auto]">
+            <input
+              ref={searchRef}
+              value={txSearch}
+              onChange={(event) => setTxSearch(event.target.value)}
+              placeholder="/ search ledger, merchant, category"
+              className="h-9 rounded border border-vault-accent/30 bg-vault-bg/60 px-3 text-xs"
+            />
+            <button
+              type="button"
+              onClick={syncPlaid}
+              className="h-9 rounded border border-emerald-500/30 bg-emerald-500/10 px-3 text-xs uppercase tracking-[0.14em] text-emerald-300"
+            >
+              Sync Plaid (Alt+S)
+            </button>
+            <button
+              type="button"
+              onClick={linkBank}
+              disabled={linkLoading || exchangingToken}
+              className="h-9 rounded border border-blue-500/30 bg-blue-500/10 px-3 text-xs uppercase tracking-[0.14em] text-blue-300 disabled:opacity-50"
+            >
+              {linkLoading ? "Preparing" : exchangingToken ? "Linking" : "Link Bank"}
             </button>
           </div>
-          {showAddRule && (
-            <GlassPanel>
-              <form onSubmit={addRule} className="grid grid-cols-2 gap-3">
-                {[["name", "Rule Name"], ["destination_tag", "Destination Tag (e.g. bills)"], ["allocation_pct", "% Allocation"]].map(([field, label]) => (
-                  <div key={field} className="flex flex-col gap-1">
-                    <label className="font-mono text-xs text-slate-400">{label}</label>
-                    <input type={field === "allocation_pct" ? "number" : "text"} value={ruleForm[field]}
-                      onChange={e => setRuleForm(p => ({ ...p, [field]: e.target.value }))}
-                      className="bg-black/30 border border-white/10 rounded px-3 py-2 font-mono text-xs text-white outline-none focus:border-emerald-500/50"
-                      required />
-                  </div>
-                ))}
-                <div className="flex flex-col gap-1">
-                  <label className="font-mono text-xs text-slate-400">Destination Account (optional)</label>
+        </GlassPanel>
+
+        {plaidStatus ? <Notice tone="success" text={plaidStatus} /> : null}
+        {plaidError ? <Notice tone="error" text={plaidError} /> : null}
+        {actionNotice ? <Notice tone="success" text={actionNotice} /> : null}
+        {actionError ? <Notice tone="error" text={actionError} /> : null}
+
+        <div className="grid gap-4 xl:grid-cols-[1fr_1.35fr_1fr]">
+          <div className="space-y-4">
+            <GlassPanel title="Financial Control" className="p-3">
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <SmallStat label="Accounts" value={String(accounts.length)} />
+                <SmallStat label="Active Rules" value={String(rules.filter((rule) => rule.is_active).length)} />
+                <SmallStat label="Reserve Target" value={`${metrics.reservePct}%`} />
+                <SmallStat label="Debt Exposure" value={`$${metrics.debtExposure.toLocaleString("en-US", { minimumFractionDigits: 2 })}`} tone="text-amber-300" />
+              </div>
+
+              <div className="mt-3 rounded border border-vault-accent/20 bg-black/20 p-2">
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-xs uppercase tracking-[0.14em] text-vault-textDim">Money Flow Map</p>
+                  <button type="button" onClick={() => setShowAddRule((prev) => !prev)} className="text-xs text-vault-textDim hover:text-white">
+                    {showAddRule ? "Hide" : "Add Rule"}
+                  </button>
+                </div>
+
+                <div className="space-y-1.5">
+                  {flowMap.map((rule) => (
+                    <div key={rule.id} className="rounded border border-vault-accent/20 bg-vault-bg/50 p-1.5">
+                      <div className="mb-1 flex items-center justify-between text-[11px]">
+                        <span className="text-vault-text">{rule.name}</span>
+                        <span className="text-vault-textDim">{rule.pct.toFixed(0)}%</span>
+                      </div>
+                      <div className="h-2 rounded bg-black/40">
+                        <div className="h-2 rounded bg-emerald-500/60" style={{ width: `${rule.width}%` }} />
+                      </div>
+                      <div className="mt-1 flex items-center justify-between text-[10px] text-vault-textDim">
+                        <span>{rule.destination_tag}</span>
+                        <button type="button" onClick={() => toggleRule(rule)} className="rounded border border-vault-accent/25 px-1.5 py-0.5">
+                          {rule.is_active ? "pause" : "activate"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {!flowMap.length ? <div className="somb-empty-state text-xs text-vault-textDim">No active routing flows yet.</div> : null}
+                </div>
+
+                {showAddRule ? (
+                  <form onSubmit={addRule} className="mt-2 grid gap-2 md:grid-cols-2">
+                    <input
+                      value={ruleForm.name}
+                      onChange={(event) => setRuleForm((prev) => ({ ...prev, name: event.target.value }))}
+                      placeholder="Rule name"
+                      className="h-8 rounded border border-vault-accent/30 bg-vault-bg/60 px-2 text-xs"
+                      required
+                    />
+                    <input
+                      value={ruleForm.destination_tag}
+                      onChange={(event) => setRuleForm((prev) => ({ ...prev, destination_tag: event.target.value }))}
+                      placeholder="Destination tag"
+                      className="h-8 rounded border border-vault-accent/30 bg-vault-bg/60 px-2 text-xs"
+                      required
+                    />
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={ruleForm.allocation_pct}
+                      onChange={(event) => setRuleForm((prev) => ({ ...prev, allocation_pct: event.target.value }))}
+                      placeholder="Allocation %"
+                      className="h-8 rounded border border-vault-accent/30 bg-vault-bg/60 px-2 text-xs"
+                      required
+                    />
+                    <select
+                      value={ruleForm.destination_account_id}
+                      onChange={(event) => setRuleForm((prev) => ({ ...prev, destination_account_id: event.target.value }))}
+                      className="h-8 rounded border border-vault-accent/30 bg-vault-bg/60 px-2 text-xs"
+                    >
+                      <option value="">No mapped account</option>
+                      {accounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.account_name} ({account.routing_tag || "no tag"})
+                        </option>
+                      ))}
+                    </select>
+                    <button type="submit" className="h-8 rounded border border-vault-accent/35 px-2 text-xs uppercase tracking-[0.14em] md:col-span-2">
+                      Save Rule
+                    </button>
+                  </form>
+                ) : null}
+              </div>
+
+              <div className="mt-3 rounded border border-vault-accent/20 bg-black/20 p-2">
+                <p className="mb-2 text-xs uppercase tracking-[0.14em] text-vault-textDim">Automation Command</p>
+                <form onSubmit={runRouter} className="grid gap-2">
+                  <input
+                    ref={routeRef}
+                    type="number"
+                    value={routeForm.income_amount}
+                    onChange={(event) => setRouteForm((prev) => ({ ...prev, income_amount: event.target.value }))}
+                    placeholder="Income amount"
+                    className="h-8 rounded border border-vault-accent/30 bg-vault-bg/60 px-2 text-xs"
+                  />
                   <select
-                    value={ruleForm.destination_account_id}
-                    onChange={(e) => {
-                      const selectedId = e.target.value;
-                      const selectedAccount = accountById[selectedId];
-                      setRuleForm((prev) => ({
-                        ...prev,
-                        destination_account_id: selectedId,
-                        destination_tag: prev.destination_tag || selectedAccount?.routing_tag || prev.destination_tag,
-                      }));
-                    }}
-                    className="bg-black/30 border border-white/10 rounded px-3 py-2 font-mono text-xs text-white outline-none focus:border-emerald-500/50"
+                    value={routeForm.source_account_id}
+                    onChange={(event) => setRouteForm((prev) => ({ ...prev, source_account_id: event.target.value }))}
+                    className="h-8 rounded border border-vault-accent/30 bg-vault-bg/60 px-2 text-xs"
                   >
-                    <option value="">No explicit account mapping</option>
+                    <option value="">Use amount only</option>
                     {accounts.map((account) => (
                       <option key={account.id} value={account.id}>
-                        {account.account_name} ({account.routing_tag || "no tag"})
+                        {account.account_name} · avail ${Number(account.balance_available || 0).toFixed(2)}
                       </option>
                     ))}
                   </select>
-                </div>
-                <div className="col-span-2 flex gap-2 justify-end">
-                  <button type="button" onClick={() => setShowAddRule(false)} className="px-3 py-1.5 font-mono text-xs text-slate-400 hover:text-white transition">Cancel</button>
-                  <button type="submit" className="px-4 py-1.5 rounded-lg bg-emerald-600/80 text-white font-mono text-xs hover:bg-emerald-600 transition">Save Rule</button>
-                </div>
-              </form>
+                  <button type="submit" className="h-8 rounded border border-vault-accent/35 px-2 text-xs uppercase tracking-[0.14em]">
+                    Run Router (Alt+R)
+                  </button>
+                </form>
+              </div>
             </GlassPanel>
-          )}
-          <GlassPanel>
-            {rules.length === 0 ? <p className="text-center py-8 text-slate-500 font-mono text-xs">No rules yet. Add one above.</p> : (
-              <div className="divide-y divide-white/5">
-                {rules.map(r => (
-                  <div key={r.id} className="flex items-center justify-between py-3">
-                    <div>
-                      <p className="font-mono text-sm text-white">{r.name}</p>
-                      <p className="font-mono text-xs text-slate-500">{r.allocation_pct}% → {r.destination_tag} · trigger: {r.trigger}</p>
-                      {r.destination_account_id ? (
-                        <p className="font-mono text-[11px] text-emerald-300/80">
-                          mapped account: {accountById[r.destination_account_id]?.account_name || "account removed"}
-                        </p>
-                      ) : null}
-                    </div>
-                    <button type="button" onClick={() => toggleRule(r)}
-                      className={`px-2 py-1 rounded font-mono text-xs ${r.is_active ? "text-emerald-400 border border-emerald-500/30" : "text-slate-500 border border-white/10"}`}>
-                      {r.is_active ? "active" : "paused"}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </GlassPanel>
+          </div>
 
-          {/* Run router */}
-          <GlassPanel>
-            <p className="font-mono text-xs text-slate-400 mb-3">Simulate money routing for an income amount:</p>
-            <form onSubmit={runRouter} className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
-              <div className="flex flex-col gap-1">
-                <label className="font-mono text-xs text-slate-400">Income Amount ($)</label>
-                <input type="number" value={routeForm.income_amount}
-                  onChange={e => setRouteForm(p => ({ ...p, income_amount: e.target.value }))}
-                  className="bg-black/30 border border-white/10 rounded px-3 py-2 font-mono text-xs text-white outline-none focus:border-emerald-500/50" />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="font-mono text-xs text-slate-400">Source Account (optional)</label>
-                <select
-                  value={routeForm.source_account_id}
-                  onChange={(e) => setRouteForm((p) => ({ ...p, source_account_id: e.target.value }))}
-                  className="bg-black/30 border border-white/10 rounded px-3 py-2 font-mono text-xs text-white outline-none focus:border-emerald-500/50"
-                >
-                  <option value="">Use only income amount</option>
-                  {accounts.map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {account.account_name} · avail ${parseFloat(account.balance_available || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                    </option>
-                  ))}
+          <div className="space-y-4">
+            <GlassPanel title="Cashflow + Activity" className="p-3">
+              <div className="mb-2 grid gap-2 md:grid-cols-[1fr_auto_auto]">
+                <select value={txFilter} onChange={(event) => setTxFilter(event.target.value)} className="h-8 rounded border border-vault-accent/30 bg-vault-bg/60 px-2 text-xs">
+                  <option value="all">All</option>
+                  <option value="income">Income</option>
+                  <option value="expense">Expense</option>
+                  <option value="recurring">Recurring</option>
                 </select>
+                <select value={txSort} onChange={(event) => setTxSort(event.target.value)} className="h-8 rounded border border-vault-accent/30 bg-vault-bg/60 px-2 text-xs">
+                  <option value="date_desc">Newest</option>
+                  <option value="amount_desc">Largest</option>
+                  <option value="amount_asc">Smallest</option>
+                </select>
+                <div className="rounded border border-vault-accent/20 bg-black/20 px-2 py-1 text-[11px] text-vault-textDim">{filteredTransactions.length} rows</div>
               </div>
-              <button type="submit" className="px-4 py-2 rounded-lg bg-emerald-600/80 text-white font-mono text-xs hover:bg-emerald-600 transition">Run</button>
-            </form>
-            {routeResult && (
-              <div className="mt-4 space-y-2">
-                {(routeResult.routing_events || []).map((ev, i) => (
-                  <div key={i} className="flex justify-between font-mono text-xs border border-white/5 rounded px-3 py-2 bg-black/20">
-                    <span className="text-slate-300">{ev.rule} → {ev.destination}</span>
-                    <span className="text-emerald-400">${parseFloat(ev.amount).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
-                    <span className="text-slate-500">{ev.status}</span>
+
+              <div className="max-h-96 overflow-auto rounded border border-vault-accent/20">
+                <table className="w-full border-collapse text-xs">
+                  <thead className="sticky top-0 bg-vault-panel/95">
+                    <tr className="text-left text-vault-textDim">
+                      <th className="px-2 py-1">Category</th>
+                      <th className="px-2 py-1">Merchant</th>
+                      <th className="px-2 py-1">Date</th>
+                      <th className="px-2 py-1 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredTransactions.slice(0, 120).map((tx) => (
+                      <tr key={tx.id} className="border-t border-vault-accent/10">
+                        <td className="px-2 py-1 text-vault-textDim">[{(tx.category || "other").slice(0, 10)}]</td>
+                        <td className="px-2 py-1 text-vault-text">{tx.name}</td>
+                        <td className="px-2 py-1 text-vault-textDim">{tx.transaction_date}</td>
+                        <td className={`px-2 py-1 text-right ${tx.numericAmount < 0 ? "text-red-300" : "text-emerald-300"}`}>
+                          {tx.numericAmount < 0 ? "-" : "+"}${Math.abs(tx.numericAmount).toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {!filteredTransactions.length ? <div className="mt-2 somb-empty-state text-xs text-vault-textDim">No ledger matches current filters.</div> : null}
+            </GlassPanel>
+
+            <GlassPanel title="Financial Timeline" className="p-3">
+              <div className="max-h-56 space-y-1.5 overflow-auto text-xs">
+                {financeTimeline.map((event) => (
+                  <div key={event.id} className="rounded border border-vault-accent/20 bg-black/20 px-2 py-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-vault-text">{event.title}</span>
+                      <span className={event.tone}>{event.detail}</span>
+                    </div>
+                    <p className="text-[10px] text-vault-textDim">{event.when.toLocaleString()}</p>
                   </div>
                 ))}
+                {!financeTimeline.length ? <div className="somb-empty-state text-vault-textDim">No timeline activity yet.</div> : null}
               </div>
-            )}
-          </GlassPanel>
+            </GlassPanel>
+          </div>
+
+          <div className="space-y-4">
+            <GlassPanel title="Actionable Insights" className="p-3">
+              <div className="space-y-2 text-xs">
+                <div className="rounded border border-vault-accent/20 bg-black/20 p-2">
+                  <p className="text-vault-textDim">Safe-to-Spend</p>
+                  <p className="text-lg text-emerald-300">${metrics.safeToSpend.toFixed(2)}</p>
+                  <p className="text-[10px] text-vault-textDim">after obligations + reserve target</p>
+                </div>
+
+                <InsightList title="Bills Due Soon" items={billsDue} amountTone="text-amber-300" />
+                <InsightList title="Unusual Spending" items={unusualSpending} amountTone="text-red-300" />
+                <InsightList title="Infrastructure Spend" items={hostingExpenses} amountTone="text-vault-textDim" />
+              </div>
+            </GlassPanel>
+
+            <GlassPanel title="Routing Events" className="p-3">
+              <div className="max-h-48 space-y-1.5 overflow-auto text-xs">
+                {routing.slice(0, 10).map((event) => (
+                  <div key={event.id} className="rounded border border-vault-accent/20 bg-black/20 px-2 py-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-vault-text">{event.destination_tag}</span>
+                      <span className="text-emerald-300">${Number(event.amount_routed || 0).toFixed(2)}</span>
+                    </div>
+                    <p className="text-[10px] text-vault-textDim">{event.status} · {String(event.created_at || "").slice(0, 16)}</p>
+                  </div>
+                ))}
+                {!routing.length ? <div className="somb-empty-state text-vault-textDim">No routing history yet.</div> : null}
+              </div>
+
+              {routeResult?.routing_events?.length ? (
+                <div className="mt-2 rounded border border-emerald-500/30 bg-emerald-500/10 p-2 text-xs text-emerald-200">
+                  Latest simulation produced {routeResult.routing_events.length} routing decisions.
+                </div>
+              ) : null}
+            </GlassPanel>
+          </div>
         </div>
-      )}
 
-      {/* Transactions Tab */}
-      {activeTab === "transactions" && (
-        <GlassPanel>
-          {transactions.length === 0 ? <p className="text-center py-8 text-slate-500 font-mono text-xs">No transactions yet. Link a bank account, then run Sync Plaid to import transaction flow.</p> : (
-            <div className="divide-y divide-white/5">
-              {transactions.map(t => (
-                <div key={t.id} className="flex items-center justify-between py-3">
-                  <div>
-                    <p className="font-mono text-sm text-white">{t.name}</p>
-                    <p className="font-mono text-xs text-slate-500">{t.category} · {t.transaction_date}</p>
-                  </div>
-                  <span className={`font-mono text-sm ${parseFloat(t.amount) < 0 ? "text-red-400" : "text-emerald-400"}`}>
-                    {parseFloat(t.amount) < 0 ? "-" : "+"}${Math.abs(parseFloat(t.amount)).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </GlassPanel>
-      )}
+        {!accounts.length && !plaidStatus && !plaidError ? (
+          <div className="somb-empty-state text-xs text-vault-textDim">
+            No linked financial accounts detected. Use Link Bank to connect Plaid, then run sync to hydrate treasury data.
+          </div>
+        ) : null}
+      </div>
+    </AppShell>
+  );
+}
 
-      {/* Routing History Tab */}
-      {activeTab === "routing" && (
-        <GlassPanel>
-          {routing.length === 0 ? <p className="text-center py-8 text-slate-500 font-mono text-xs">No routing events yet. Run a simulation from Rules to validate destination allocations.</p> : (
-            <div className="divide-y divide-white/5">
-              {routing.map(ev => (
-                <div key={ev.id} className="flex items-center justify-between py-3">
-                  <div>
-                    <p className="font-mono text-xs text-slate-300">{ev.trigger} → {ev.destination_tag}</p>
-                    <p className="font-mono text-xs text-slate-500">{ev.created_at?.slice(0, 16)}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-mono text-sm text-emerald-400">${parseFloat(ev.amount_routed).toLocaleString("en-US", { minimumFractionDigits: 2 })}</p>
-                    <p className={`font-mono text-xs ${ev.status === "simulated" ? "text-slate-500" : ev.status === "queued" ? "text-yellow-400" : "text-emerald-400"}`}>{ev.status}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </GlassPanel>
-      )}
+function Metric({ label, value, tone }) {
+  return (
+    <div className="rounded border border-vault-accent/25 bg-black/25 p-2">
+      <p className="text-[10px] uppercase tracking-[0.16em] text-vault-textDim">{label}</p>
+      <p className={`font-display text-lg ${tone}`}>{value}</p>
+    </div>
+  );
+}
+
+function SmallStat({ label, value, tone = "text-vault-text" }) {
+  return (
+    <div className="rounded border border-vault-accent/20 bg-black/20 p-2">
+      <p className="text-vault-textDim">{label}</p>
+      <p className={`text-base ${tone}`}>{value}</p>
+    </div>
+  );
+}
+
+function Notice({ tone, text }) {
+  const classes =
+    tone === "success"
+      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+      : "border-red-500/30 bg-red-500/10 text-red-200";
+
+  return <div className={`rounded px-3 py-2 text-xs ${classes}`}>{text}</div>;
+}
+
+function InsightList({ title, items, amountTone }) {
+  return (
+    <div className="rounded border border-vault-accent/20 bg-black/20 p-2">
+      <p className="mb-1 text-vault-textDim">{title}</p>
+      <div className="space-y-1">
+        {items.map((item) => (
+          <div key={item.id} className="flex items-center justify-between">
+            <span className="text-vault-text">{item.name}</span>
+            <span className={amountTone}>${Math.abs(Number(item.numericAmount || 0)).toFixed(2)}</span>
+          </div>
+        ))}
+        {!items.length ? <p className="text-vault-textDim">No signal detected.</p> : null}
+      </div>
     </div>
   );
 }
