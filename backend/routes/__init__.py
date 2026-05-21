@@ -4,6 +4,7 @@ from backend.routes.api_gateway import gateway_bp
 from backend.routes.auth import auth_bp
 from backend.routes.blockchain import blockchain_bp
 from backend.routes.bookings import bookings_bp
+from backend.routes.contacts import contacts_bp
 from backend.routes.briefing import briefing_bp
 from backend.routes.dashboard import dashboard_bp
 from backend.routes.financial import financial_bp
@@ -31,6 +32,7 @@ def register_routes(app):
     app.register_blueprint(payments_bp, url_prefix=f"{base}/payments")
     app.register_blueprint(notifications_bp, url_prefix=f"{base}/notifications")
     app.register_blueprint(bookings_bp, url_prefix=f"{base}/bookings")
+    app.register_blueprint(contacts_bp, url_prefix=f"{base}/contacts")
     app.register_blueprint(blockchain_bp, url_prefix=f"{base}/blockchain")
     app.register_blueprint(analytics_bp, url_prefix=f"{base}/analytics")
     app.register_blueprint(webhook_bp, url_prefix=f"{base}/webhooks")

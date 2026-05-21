@@ -405,15 +405,15 @@ export default function FinancialPage() {
   return (
     <AppShell user={user} onLogout={handleLogout} title="financial os">
       <div className="space-y-4">
-        <GlassPanel title="Treasury Snapshot" className="p-3">
+        <GlassPanel title="Treasury Control" className="p-3">
           <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6">
             <Metric label="Liquidity" value={`$${metrics.totalLiquidity.toLocaleString("en-US", { minimumFractionDigits: 2 })}`} tone="text-vault-text" />
-            <Metric label="Safe To Spend" value={`$${metrics.safeToSpend.toLocaleString("en-US", { minimumFractionDigits: 2 })}`} tone="text-emerald-300" />
+            <Metric label="Spendable Cash" value={`$${metrics.safeToSpend.toLocaleString("en-US", { minimumFractionDigits: 2 })}`} tone="text-emerald-300" />
             <Metric label="Upcoming Bills" value={`$${metrics.upcomingBills.toLocaleString("en-US", { minimumFractionDigits: 2 })}`} tone="text-amber-300" />
-            <Metric label="Incoming (7d)" value={`$${metrics.incomingSoon.toLocaleString("en-US", { minimumFractionDigits: 2 })}`} tone="text-cyan-300" />
-            <Metric label="Savings Rate" value={`${metrics.savingsRulePct.toFixed(0)}%`} tone="text-vault-text" />
+            <Metric label="Incoming Cash (7d)" value={`$${metrics.incomingSoon.toLocaleString("en-US", { minimumFractionDigits: 2 })}`} tone="text-cyan-300" />
+            <Metric label="Savings Routing" value={`${metrics.savingsRulePct.toFixed(0)}%`} tone="text-vault-text" />
             <Metric
-              label="Burn Trend WoW"
+              label="Weekly Burn Trend"
               value={`${metrics.burnTrendPct > 0 ? "+" : ""}${metrics.burnTrendPct}%`}
               tone={metrics.burnTrendPct <= 0 ? "text-emerald-300" : "text-amber-300"}
             />
@@ -424,7 +424,7 @@ export default function FinancialPage() {
               ref={searchRef}
               value={txSearch}
               onChange={(event) => setTxSearch(event.target.value)}
-              placeholder="/ search ledger, merchant, category"
+              placeholder="/ search ledger, merchant, or category"
               className="h-9 rounded border border-vault-accent/30 bg-vault-bg/60 px-3 text-xs"
             />
             <button
@@ -432,7 +432,7 @@ export default function FinancialPage() {
               onClick={syncPlaid}
               className="h-9 rounded border border-emerald-500/30 bg-emerald-500/10 px-3 text-xs uppercase tracking-[0.14em] text-emerald-300"
             >
-              Sync Plaid (Alt+S)
+              Sync bank data (Alt+S)
             </button>
             <button
               type="button"
@@ -440,7 +440,7 @@ export default function FinancialPage() {
               disabled={linkLoading || exchangingToken}
               className="h-9 rounded border border-blue-500/30 bg-blue-500/10 px-3 text-xs uppercase tracking-[0.14em] text-blue-300 disabled:opacity-50"
             >
-              {linkLoading ? "Preparing" : exchangingToken ? "Linking" : "Link Bank"}
+              {linkLoading ? "Preparing" : exchangingToken ? "Connecting" : "Connect bank"}
             </button>
           </div>
         </GlassPanel>
@@ -452,19 +452,19 @@ export default function FinancialPage() {
 
         <div className="grid gap-4 xl:grid-cols-[1fr_1.35fr_1fr]">
           <div className="space-y-4">
-            <GlassPanel title="Financial Control" className="p-3">
+            <GlassPanel title="Routing Controls" className="p-3">
               <div className="grid grid-cols-2 gap-2 text-xs">
-                <SmallStat label="Accounts" value={String(accounts.length)} />
-                <SmallStat label="Active Rules" value={String(rules.filter((rule) => rule.is_active).length)} />
-                <SmallStat label="Reserve Target" value={`${metrics.reservePct}%`} />
-                <SmallStat label="Debt Exposure" value={`$${metrics.debtExposure.toLocaleString("en-US", { minimumFractionDigits: 2 })}`} tone="text-amber-300" />
+                <SmallStat label="Connected accounts" value={String(accounts.length)} />
+                <SmallStat label="Active rules" value={String(rules.filter((rule) => rule.is_active).length)} />
+                <SmallStat label="Reserve target" value={`${metrics.reservePct}%`} />
+                <SmallStat label="Debt exposure" value={`$${metrics.debtExposure.toLocaleString("en-US", { minimumFractionDigits: 2 })}`} tone="text-amber-300" />
               </div>
 
               <div className="mt-3 rounded border border-vault-accent/20 bg-black/20 p-2">
                 <div className="mb-2 flex items-center justify-between">
-                  <p className="text-xs uppercase tracking-[0.14em] text-vault-textDim">Money Flow Map</p>
+                  <p className="text-xs uppercase tracking-[0.14em] text-vault-textDim">Cash routing lanes</p>
                   <button type="button" onClick={() => setShowAddRule((prev) => !prev)} className="text-xs text-vault-textDim hover:text-white">
-                    {showAddRule ? "Hide" : "Add Rule"}
+                    {showAddRule ? "Hide" : "Add rule"}
                   </button>
                 </div>
 
@@ -481,12 +481,12 @@ export default function FinancialPage() {
                       <div className="mt-1 flex items-center justify-between text-[10px] text-vault-textDim">
                         <span>{rule.destination_tag}</span>
                         <button type="button" onClick={() => toggleRule(rule)} className="rounded border border-vault-accent/25 px-1.5 py-0.5">
-                          {rule.is_active ? "pause" : "activate"}
+                          {rule.is_active ? "Pause" : "Resume"}
                         </button>
                       </div>
                     </div>
                   ))}
-                  {!flowMap.length ? <div className="somb-empty-state text-xs text-vault-textDim">No active routing flows yet.</div> : null}
+                  {!flowMap.length ? <div className="somb-empty-state text-xs text-vault-textDim">No routing lanes yet. Add one to direct income automatically.</div> : null}
                 </div>
 
                 {showAddRule ? (
@@ -501,7 +501,7 @@ export default function FinancialPage() {
                     <input
                       value={ruleForm.destination_tag}
                       onChange={(event) => setRuleForm((prev) => ({ ...prev, destination_tag: event.target.value }))}
-                      placeholder="Destination tag"
+                      placeholder="Destination lane"
                       className="h-8 rounded border border-vault-accent/30 bg-vault-bg/60 px-2 text-xs"
                       required
                     />
@@ -520,7 +520,7 @@ export default function FinancialPage() {
                       onChange={(event) => setRuleForm((prev) => ({ ...prev, destination_account_id: event.target.value }))}
                       className="h-8 rounded border border-vault-accent/30 bg-vault-bg/60 px-2 text-xs"
                     >
-                      <option value="">No mapped account</option>
+                      <option value="">No account mapping</option>
                       {accounts.map((account) => (
                         <option key={account.id} value={account.id}>
                           {account.account_name} ({account.routing_tag || "no tag"})
@@ -528,14 +528,14 @@ export default function FinancialPage() {
                       ))}
                     </select>
                     <button type="submit" className="h-8 rounded border border-vault-accent/35 px-2 text-xs uppercase tracking-[0.14em] md:col-span-2">
-                      Save Rule
+                      Save routing rule
                     </button>
                   </form>
                 ) : null}
               </div>
 
               <div className="mt-3 rounded border border-vault-accent/20 bg-black/20 p-2">
-                <p className="mb-2 text-xs uppercase tracking-[0.14em] text-vault-textDim">Automation Command</p>
+                <p className="mb-2 text-xs uppercase tracking-[0.14em] text-vault-textDim">Paycheck routing simulation</p>
                 <form onSubmit={runRouter} className="grid gap-2">
                   <input
                     ref={routeRef}
@@ -558,7 +558,7 @@ export default function FinancialPage() {
                     ))}
                   </select>
                   <button type="submit" className="h-8 rounded border border-vault-accent/35 px-2 text-xs uppercase tracking-[0.14em]">
-                    Run Router (Alt+R)
+                    Simulate routing (Alt+R)
                   </button>
                 </form>
               </div>
@@ -566,18 +566,18 @@ export default function FinancialPage() {
           </div>
 
           <div className="space-y-4">
-            <GlassPanel title="Cashflow + Activity" className="p-3">
+            <GlassPanel title="Ledger + Activity" className="p-3">
               <div className="mb-2 grid gap-2 md:grid-cols-[1fr_auto_auto]">
                 <select value={txFilter} onChange={(event) => setTxFilter(event.target.value)} className="h-8 rounded border border-vault-accent/30 bg-vault-bg/60 px-2 text-xs">
-                  <option value="all">All</option>
-                  <option value="income">Income</option>
-                  <option value="expense">Expense</option>
+                  <option value="all">All entries</option>
+                  <option value="income">Money in</option>
+                  <option value="expense">Money out</option>
                   <option value="recurring">Recurring</option>
                 </select>
                 <select value={txSort} onChange={(event) => setTxSort(event.target.value)} className="h-8 rounded border border-vault-accent/30 bg-vault-bg/60 px-2 text-xs">
-                  <option value="date_desc">Newest</option>
-                  <option value="amount_desc">Largest</option>
-                  <option value="amount_asc">Smallest</option>
+                  <option value="date_desc">Newest first</option>
+                  <option value="amount_desc">Largest first</option>
+                  <option value="amount_asc">Smallest first</option>
                 </select>
                 <div className="rounded border border-vault-accent/20 bg-black/20 px-2 py-1 text-[11px] text-vault-textDim">{filteredTransactions.length} rows</div>
               </div>
@@ -607,10 +607,10 @@ export default function FinancialPage() {
                 </table>
               </div>
 
-              {!filteredTransactions.length ? <div className="mt-2 somb-empty-state text-xs text-vault-textDim">No ledger matches current filters.</div> : null}
+              {!filteredTransactions.length ? <div className="mt-2 somb-empty-state text-xs text-vault-textDim">No ledger rows match these filters.</div> : null}
             </GlassPanel>
 
-            <GlassPanel title="Financial Timeline" className="p-3">
+            <GlassPanel title="Cashflow timeline" className="p-3">
               <div className="max-h-56 space-y-1.5 overflow-auto text-xs">
                 {financeTimeline.map((event) => (
                   <div key={event.id} className="rounded border border-vault-accent/20 bg-black/20 px-2 py-1.5">
@@ -621,27 +621,27 @@ export default function FinancialPage() {
                     <p className="text-[10px] text-vault-textDim">{event.when.toLocaleString()}</p>
                   </div>
                 ))}
-                {!financeTimeline.length ? <div className="somb-empty-state text-vault-textDim">No timeline activity yet.</div> : null}
+                {!financeTimeline.length ? <div className="somb-empty-state text-vault-textDim">No activity yet.</div> : null}
               </div>
             </GlassPanel>
           </div>
 
           <div className="space-y-4">
-            <GlassPanel title="Actionable Insights" className="p-3">
+            <GlassPanel title="What needs attention" className="p-3">
               <div className="space-y-2 text-xs">
                 <div className="rounded border border-vault-accent/20 bg-black/20 p-2">
-                  <p className="text-vault-textDim">Safe-to-Spend</p>
+                  <p className="text-vault-textDim">Spendable cash</p>
                   <p className="text-lg text-emerald-300">${metrics.safeToSpend.toFixed(2)}</p>
-                  <p className="text-[10px] text-vault-textDim">after obligations + reserve target</p>
+                  <p className="text-[10px] text-vault-textDim">after bills and reserve target</p>
                 </div>
 
-                <InsightList title="Bills Due Soon" items={billsDue} amountTone="text-amber-300" />
-                <InsightList title="Unusual Spending" items={unusualSpending} amountTone="text-red-300" />
-                <InsightList title="Infrastructure Spend" items={hostingExpenses} amountTone="text-vault-textDim" />
+                <InsightList title="Bills due soon" items={billsDue} amountTone="text-amber-300" />
+                <InsightList title="Unusual spending" items={unusualSpending} amountTone="text-red-300" />
+                <InsightList title="Ops spend" items={hostingExpenses} amountTone="text-vault-textDim" />
               </div>
             </GlassPanel>
 
-            <GlassPanel title="Routing Events" className="p-3">
+            <GlassPanel title="Routing log" className="p-3">
               <div className="max-h-48 space-y-1.5 overflow-auto text-xs">
                 {routing.slice(0, 10).map((event) => (
                   <div key={event.id} className="rounded border border-vault-accent/20 bg-black/20 px-2 py-1.5">
@@ -652,12 +652,12 @@ export default function FinancialPage() {
                     <p className="text-[10px] text-vault-textDim">{event.status} · {String(event.created_at || "").slice(0, 16)}</p>
                   </div>
                 ))}
-                {!routing.length ? <div className="somb-empty-state text-vault-textDim">No routing history yet.</div> : null}
+                {!routing.length ? <div className="somb-empty-state text-vault-textDim">No routing activity yet.</div> : null}
               </div>
 
               {routeResult?.routing_events?.length ? (
                 <div className="mt-2 rounded border border-emerald-500/30 bg-emerald-500/10 p-2 text-xs text-emerald-200">
-                  Latest simulation produced {routeResult.routing_events.length} routing decisions.
+                  Latest simulation produced {routeResult.routing_events.length} routing moves.
                 </div>
               ) : null}
             </GlassPanel>
@@ -666,7 +666,7 @@ export default function FinancialPage() {
 
         {!accounts.length && !plaidStatus && !plaidError ? (
           <div className="somb-empty-state text-xs text-vault-textDim">
-            No linked financial accounts detected. Use Link Bank to connect Plaid, then run sync to hydrate treasury data.
+            No bank accounts connected yet. Connect one to see cash position, routing, and spendable cash.
           </div>
         ) : null}
       </div>
@@ -712,7 +712,7 @@ function InsightList({ title, items, amountTone }) {
             <span className={amountTone}>${Math.abs(Number(item.numericAmount || 0)).toFixed(2)}</span>
           </div>
         ))}
-        {!items.length ? <p className="text-vault-textDim">No signal detected.</p> : null}
+        {!items.length ? <p className="text-vault-textDim">Nothing urgent.</p> : null}
       </div>
     </div>
   );

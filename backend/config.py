@@ -58,3 +58,17 @@ class Config:
     # Google Calendar
     GOOGLE_CALENDAR_CLIENT_ID = os.getenv("GOOGLE_CALENDAR_CLIENT_ID", "")
     GOOGLE_CALENDAR_CLIENT_SECRET = os.getenv("GOOGLE_CALENDAR_CLIENT_SECRET", "")
+    GOOGLE_CALENDAR_REDIRECT_URI = os.getenv("GOOGLE_CALENDAR_REDIRECT_URI", "")
+    GOOGLE_CALENDAR_SCOPES = os.getenv(
+        "GOOGLE_CALENDAR_SCOPES",
+        "openid email profile https://www.googleapis.com/auth/calendar",
+    )
+    # Microsoft / Outlook Calendar
+    MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID", "")
+    MICROSOFT_CLIENT_SECRET = os.getenv("MICROSOFT_CLIENT_SECRET", "")
+    MICROSOFT_TENANT_ID = os.getenv("MICROSOFT_TENANT_ID", "common")
+    MICROSOFT_REDIRECT_URI = os.getenv("MICROSOFT_REDIRECT_URI", "")
+    MICROSOFT_SCOPES = os.getenv(
+        "MICROSOFT_SCOPES",
+        "openid email profile offline_access User.Read Calendars.ReadWrite",
+    )

@@ -2,6 +2,7 @@ from backend.models.analytics import AnalyticsEvent
 from backend.models.api_key import ApiKey
 from backend.models.blockchain import ChainTransaction, Wallet
 from backend.models.booking import Booking
+from backend.models.contact import Contact
 from backend.models.financial import AllocationRule, FinancialAccount, PlaidTransaction, RoutingEvent
 from backend.models.knowledge import BriefingLog, CalendarEvent, KnowledgeEntry
 from backend.models.logs import ActivityLog, AuditLog
@@ -23,6 +24,7 @@ __all__ = [
     "AuditLog",
     "BriefingLog",
     "Booking",
+    "Contact",
     "CalendarEvent",
     "ChainTransaction",
     "FinancialAccount",
