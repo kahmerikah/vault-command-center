@@ -1,6 +1,6 @@
 from urllib.parse import urlparse
 
-from flask import Blueprint, g, request
+from flask import Blueprint, current_app, g, request
 from flask_jwt_extended import get_jwt_identity, jwt_required, verify_jwt_in_request
 from backend.extensions import db
 from backend.models import ActivityLog
@@ -21,7 +21,7 @@ def _origin_host(value: str) -> str | None:
 def _is_site_native_request() -> bool:
     host = (request.host or "").lower()
     allowed = {host}
-    for origin in request.app.config.get("ALLOWED_ORIGINS", []):
+    for origin in current_app.config.get("ALLOWED_ORIGINS", []):
         origin_host = _origin_host(origin)
         if origin_host:
             allowed.add(origin_host)
