@@ -4,6 +4,7 @@ from backend.models.blockchain import ChainTransaction, Wallet
 from backend.models.booking import Booking
 from backend.models.contact import Contact
 from backend.models.financial import AllocationRule, FinancialAccount, PlaidTransaction, RoutingEvent
+from backend.models.integration import IntegrationAccount
 from backend.models.knowledge import BriefingLog, CalendarEvent, KnowledgeEntry
 from backend.models.logs import ActivityLog, AuditLog
 from backend.models.module import RegisteredModule
@@ -28,6 +29,7 @@ __all__ = [
     "CalendarEvent",
     "ChainTransaction",
     "FinancialAccount",
+    "IntegrationAccount",
     "KnowledgeEntry",
     "Notification",
     "Payment",

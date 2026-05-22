@@ -385,6 +385,12 @@ export default function PDAPage() {
   const [contactImportText, setContactImportText] = useState("");
   const [contactNote, setContactNote] = useState("");
   const [linkCandidateId, setLinkCandidateId] = useState("");
+  const [integrationStatus, setIntegrationStatus] = useState({});
+  const [integrationNotice, setIntegrationNotice] = useState("");
+  const [icalUrl, setIcalUrl] = useState("");
+  const [icalImportText, setIcalImportText] = useState("");
+  const [zillowQuery, setZillowQuery] = useState("");
+  const [zillowResults, setZillowResults] = useState([]);
 
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date();
@@ -442,6 +448,7 @@ export default function PDAPage() {
         activityRes,
         healthRes,
         contactsRes,
+        integrationsRes,
       ] = await Promise.allSettled([
         api.get("/bookings", { params: { limit: 300 } }),
         api.get(`/briefing/morning?zip=${zip}`),
@@ -451,6 +458,7 @@ export default function PDAPage() {
         api.get("/gateway/activity", { params: { limit: 50 } }),
         api.get("/health/system"),
         api.get("/contacts", { params: { limit: 500 } }),
+        api.get("/integrations/providers"),
       ]);
 
       setBookings(bookingsRes.status === "fulfilled" ? bookingsRes.value.data?.data?.items || [] : []);
@@ -461,9 +469,14 @@ export default function PDAPage() {
       setActivity(activityRes.status === "fulfilled" ? activityRes.value.data?.data?.items || [] : []);
       setHealth(healthRes.status === "fulfilled" ? healthRes.value.data?.data || null : null);
       setContacts(contactsRes.status === "fulfilled" ? contactsRes.value.data?.data?.items || [] : []);
+      setIntegrationStatus(integrationsRes.status === "fulfilled" ? integrationsRes.value.data?.data || {} : {});
+      if (integrationsRes.status === "fulfilled") {
+        const configuredIcalUrl = integrationsRes.value.data?.data?.ical?.ics_url || "";
+        if (configuredIcalUrl) setIcalUrl(configuredIcalUrl);
+      }
 
       if (
-        [bookingsRes, morningRes, nightRes, historyRes, todosRes, activityRes, healthRes, contactsRes].some(
+        [bookingsRes, morningRes, nightRes, historyRes, todosRes, activityRes, healthRes, contactsRes, integrationsRes].some(
           (r) => r.status === "rejected"
         )
       ) {
@@ -481,6 +494,28 @@ export default function PDAPage() {
     setAuthToken(accessToken);
     load();
   }, [accessToken]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const provider = params.get("integration");
+    const status = params.get("status");
+    const message = params.get("message") || "";
+    if (!provider || !status) return;
+
+    if (status === "connected") {
+      setIntegrationNotice(`${provider} connected.`);
+      load();
+    } else {
+      setIntegrationNotice(`${provider} connect failed${message ? `: ${message}` : ""}`);
+    }
+
+    params.delete("integration");
+    params.delete("status");
+    params.delete("message");
+    const query = params.toString();
+    const nextUrl = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash || ""}`;
+    window.history.replaceState({}, "", nextUrl);
+  }, []);
 
   const bookingsByDay = useMemo(() => {
     const map = new Map();
@@ -872,6 +907,73 @@ export default function PDAPage() {
       URL.revokeObjectURL(url);
       setCalendarCopyNotice("Calendar file downloaded. Open it in Outlook, Google Calendar, or Apple Calendar.");
     }
+  };
+
+  const connectIntegration = async (provider) => {
+    setIntegrationNotice("");
+    const response = await api.get(`/integrations/${provider}/connect`);
+    const authUrl = response.data?.data?.auth_url;
+    if (!authUrl) {
+      setIntegrationNotice(`Unable to connect ${provider}.`);
+      return;
+    }
+    window.location.assign(authUrl);
+  };
+
+  const syncIntegration = async (provider) => {
+    setIntegrationNotice("");
+    const response = await api.post(`/integrations/${provider}/sync`, {});
+    const synced = response.data?.data?.events;
+    setIntegrationNotice(
+      Number.isFinite(synced)
+        ? `${provider} sync complete (${synced} events).`
+        : `${provider} sync complete.`
+    );
+    await load();
+  };
+
+  const disconnectIntegration = async (provider) => {
+    setIntegrationNotice("");
+    await api.post(`/integrations/disconnect/${provider}`, {});
+    setIntegrationNotice(`${provider} disconnected.`);
+    await load();
+  };
+
+  const syncIcalFromUrl = async () => {
+    if (!icalUrl.trim()) {
+      setIntegrationNotice("Add an iCal URL first.");
+      return;
+    }
+    setIntegrationNotice("");
+    const response = await api.post("/integrations/ical/sync-url", { ics_url: icalUrl.trim() });
+    const synced = response.data?.data?.events;
+    setIntegrationNotice(`iCal sync complete (${synced || 0} events).`);
+    await load();
+  };
+
+  const importIcalPayload = async () => {
+    if (!icalImportText.trim()) {
+      setIntegrationNotice("Paste an iCalendar payload first.");
+      return;
+    }
+    setIntegrationNotice("");
+    const response = await api.post("/integrations/ical/import", { ics: icalImportText });
+    const synced = response.data?.data?.events;
+    setIntegrationNotice(`iCal import complete (${synced || 0} events).`);
+    setIcalImportText("");
+    await load();
+  };
+
+  const runZillowSearch = async () => {
+    const query = zillowQuery.trim();
+    if (!query) {
+      setIntegrationNotice("Enter a location for Zillow lookup.");
+      return;
+    }
+    setIntegrationNotice("");
+    const response = await api.post("/integrations/zillow/search", { location: query, limit: 8 });
+    setZillowResults(response.data?.data?.items || []);
+    setIntegrationNotice(`Zillow lookup complete (${response.data?.data?.count || 0} results).`);
   };
 
   const runQuickCapture = async (event) => {
@@ -1332,9 +1434,108 @@ export default function PDAPage() {
             </GlassPanel>
 
             <GlassPanel title="Calendar bridge" className="p-3">
-              <div className="space-y-2 text-xs text-vault-textDim">
-                <p>Use one event format for Outlook, Google Calendar, and Apple Calendar.</p>
-                <p>Create the event here, then copy the .ics payload or download it as a file.</p>
+              <div className="space-y-3 text-xs text-vault-textDim">
+                <p>Connect Google Calendar and Outlook for direct sync, and use iCalendar URL/import for Apple and other calendar providers.</p>
+
+                <div className="grid gap-2 md:grid-cols-2">
+                  <div className="rounded border border-vault-accent/20 bg-black/20 p-2">
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-vault-textDim">Google Calendar</p>
+                    <p className="mt-1 text-vault-text">
+                      {integrationStatus?.google?.connected ? "Connected" : "Not connected"}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button type="button" onClick={() => connectIntegration("google")} className="h-8 rounded border border-vault-accent/30 px-2 text-[10px] uppercase tracking-[0.14em]">
+                        Connect
+                      </button>
+                      <button type="button" onClick={() => syncIntegration("google")} className="h-8 rounded border border-cyan-500/35 px-2 text-[10px] uppercase tracking-[0.14em] text-cyan-200">
+                        Sync
+                      </button>
+                      {integrationStatus?.google?.connected ? (
+                        <button type="button" onClick={() => disconnectIntegration("google")} className="h-8 rounded border border-red-500/35 px-2 text-[10px] uppercase tracking-[0.14em] text-red-200">
+                          Disconnect
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="rounded border border-vault-accent/20 bg-black/20 p-2">
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-vault-textDim">Outlook Calendar</p>
+                    <p className="mt-1 text-vault-text">
+                      {integrationStatus?.microsoft?.connected ? "Connected" : "Not connected"}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button type="button" onClick={() => connectIntegration("microsoft")} className="h-8 rounded border border-vault-accent/30 px-2 text-[10px] uppercase tracking-[0.14em]">
+                        Connect
+                      </button>
+                      <button type="button" onClick={() => syncIntegration("microsoft")} className="h-8 rounded border border-cyan-500/35 px-2 text-[10px] uppercase tracking-[0.14em] text-cyan-200">
+                        Sync
+                      </button>
+                      {integrationStatus?.microsoft?.connected ? (
+                        <button type="button" onClick={() => disconnectIntegration("microsoft")} className="h-8 rounded border border-red-500/35 px-2 text-[10px] uppercase tracking-[0.14em] text-red-200">
+                          Disconnect
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded border border-vault-accent/20 bg-black/20 p-2">
+                  <p className="text-[10px] uppercase tracking-[0.14em] text-vault-textDim">iCalendar (.ics URL or payload)</p>
+                  <input
+                    value={icalUrl}
+                    onChange={(event) => setIcalUrl(event.target.value)}
+                    placeholder="https://calendar.example.com/calendar.ics"
+                    className="mt-2 h-8 w-full rounded border border-vault-accent/30 bg-vault-bg/60 px-2 text-xs"
+                  />
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button type="button" onClick={syncIcalFromUrl} className="h-8 rounded border border-cyan-500/35 px-2 text-[10px] uppercase tracking-[0.14em] text-cyan-200">
+                      Sync URL
+                    </button>
+                    <button type="button" onClick={() => syncIntegration("ical")} className="h-8 rounded border border-vault-accent/30 px-2 text-[10px] uppercase tracking-[0.14em]">
+                      Re-sync saved URL
+                    </button>
+                  </div>
+                  <textarea
+                    value={icalImportText}
+                    onChange={(event) => setIcalImportText(event.target.value)}
+                    placeholder="Paste iCalendar payload (BEGIN:VCALENDAR...)"
+                    className="mt-2 min-h-24 w-full rounded border border-vault-accent/30 bg-vault-bg/60 px-2 py-2 text-xs"
+                  />
+                  <button type="button" onClick={importIcalPayload} className="mt-2 h-8 rounded border border-vault-accent/30 px-2 text-[10px] uppercase tracking-[0.14em]">
+                    Import payload
+                  </button>
+                </div>
+
+                <div className="rounded border border-vault-accent/20 bg-black/20 p-2">
+                  <p className="text-[10px] uppercase tracking-[0.14em] text-vault-textDim">Zillow lookup (RapidAPI)</p>
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      value={zillowQuery}
+                      onChange={(event) => setZillowQuery(event.target.value)}
+                      placeholder="ZIP, city, or address"
+                      className="h-8 flex-1 rounded border border-vault-accent/30 bg-vault-bg/60 px-2 text-xs"
+                    />
+                    <button type="button" onClick={runZillowSearch} className="h-8 rounded border border-vault-accent/30 px-2 text-[10px] uppercase tracking-[0.14em]">
+                      Search
+                    </button>
+                  </div>
+                  {zillowResults.length ? (
+                    <div className="mt-2 max-h-40 space-y-1 overflow-auto">
+                      {zillowResults.map((result, index) => (
+                        <div key={`${result.zpid || result.address || "z"}-${index}`} className="rounded border border-vault-accent/15 px-2 py-1">
+                          <p className="text-vault-text">{result.address || "Property"}</p>
+                          <p className="text-vault-textDim">${result.price || "n/a"} • {result.bedrooms || "-"}bd / {result.bathrooms || "-"}ba • {result.sqft || "-"} sqft</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                {integrationNotice ? (
+                  <div className="rounded border border-cyan-500/30 bg-cyan-500/10 px-2 py-1.5 text-cyan-200">
+                    {integrationNotice}
+                  </div>
+                ) : null}
               </div>
             </GlassPanel>
           </div>

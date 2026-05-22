@@ -9,6 +9,7 @@ from backend.routes.briefing import briefing_bp
 from backend.routes.dashboard import dashboard_bp
 from backend.routes.financial import financial_bp
 from backend.routes.health import health_bp
+from backend.routes.integrations import integrations_bp
 from backend.routes.knowledge import knowledge_bp
 from backend.routes.mobile import mobile_bp
 from backend.routes.modules import modules_bp
@@ -39,6 +40,7 @@ def register_routes(app):
     # New OS layers
     app.register_blueprint(financial_bp, url_prefix=f"{base}/financial")
     app.register_blueprint(property_bp, url_prefix=f"{base}/property")
+    app.register_blueprint(integrations_bp, url_prefix=f"{base}/integrations")
     app.register_blueprint(knowledge_bp, url_prefix=f"{base}/knowledge")
     app.register_blueprint(briefing_bp, url_prefix=f"{base}/briefing")
     app.register_blueprint(mobile_bp, url_prefix=f"{base}/mobile")
