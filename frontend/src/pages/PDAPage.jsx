@@ -320,6 +320,46 @@ function contactFormToPayload(form) {
   };
 }
 
+function ContactRowsEditor({ title, rows, fields, addLabel, onAdd, onRemove, onChange }) {
+  return (
+    <div className="rounded border border-vault-accent/20 bg-black/20 p-2">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-xs uppercase tracking-[0.16em] text-vault-textDim">{title}</p>
+        <button
+          type="button"
+          onClick={onAdd}
+          className="h-7 rounded border border-vault-accent/30 px-2 text-[10px] uppercase tracking-[0.14em]"
+        >
+          {addLabel}
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {rows.map((row, index) => (
+          <div key={`${title}-${index}`} className="grid gap-2 md:grid-cols-[1fr_1fr_auto] xl:grid-cols-[repeat(6,minmax(0,1fr))_auto]">
+            {fields.map((field) => (
+              <input
+                key={`${title}-${field.key}-${index}`}
+                value={row[field.key] || ""}
+                onChange={(event) => onChange(index, field.key, event.target.value)}
+                placeholder={field.placeholder}
+                className="h-8 rounded border border-vault-accent/30 bg-vault-bg/60 px-2 text-xs"
+              />
+            ))}
+            <button
+              type="button"
+              onClick={() => onRemove(index)}
+              className="h-8 rounded border border-red-500/30 px-2 text-[10px] uppercase tracking-[0.14em] text-red-200"
+            >
+              Remove
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function PDAPage() {
   const { accessToken, refreshToken, user, clearAuth } = useVaultStore();
 
