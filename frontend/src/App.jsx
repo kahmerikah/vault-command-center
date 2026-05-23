@@ -16,6 +16,7 @@ const BlockchainPage = lazy(() => import("./pages/BlockchainPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
 const ModulesPage = lazy(() => import("./pages/ModulesPage"));
+const EnginePage = lazy(() => import("./pages/EnginePage"));
 const FinancialPage = lazy(() => import("./pages/FinancialPage"));
 const PropertyPage = lazy(() => import("./pages/PropertyPage"));
 const KnowledgePage = lazy(() => import("./pages/KnowledgePage"));
@@ -187,7 +188,7 @@ export default function App() {
   // Global keyboard navigation: g+d, g+f, g+p, g+r, g+k, g+b, g+a, g+m
   useEffect(() => {
     if (!accessToken) return;
-    const NAV_MAP = { d: "/dashboard", f: "/financial", p: "/pda", r: "/property", k: "/knowledge", b: "/blockchain", a: "/analytics", m: "/modules" };
+    const NAV_MAP = { d: "/dashboard", f: "/financial", p: "/pda", r: "/property", k: "/knowledge", b: "/blockchain", a: "/analytics", m: "/modules", e: "/engine" };
     const onKeyDown = (e) => {
       // Cmd+K handled by AppShell; skip if in input
       if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.isContentEditable) return;
@@ -232,6 +233,7 @@ export default function App() {
       <Route path="/notifications" element={<ProtectedPage element={<NotificationsPage />} />} />
       <Route path="/analytics" element={<ProtectedPage element={<AnalyticsPage />} />} />
       <Route path="/modules" element={<ProtectedPage element={<ModulesPage />} />} />
+      <Route path="/engine" element={<ProtectedPage element={<EnginePage />} />} />
       <Route path="/financial" element={<ProtectedPage element={<FinancialPage />} />} />
       <Route path="/property" element={<ProtectedPage element={<PropertyPage />} />} />
       <Route path="/knowledge" element={<ProtectedPage element={<KnowledgePage />} />} />

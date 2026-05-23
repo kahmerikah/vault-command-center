@@ -21,6 +21,7 @@ from backend.routes.payments import payments_bp
 from backend.routes.property import property_bp
 from backend.payments.webhooks import webhook_bp
 
+from backend.routes.engine import engine_bp
 
 def register_routes(app):
     version = app.config["API_VERSION"]
@@ -48,5 +49,6 @@ def register_routes(app):
     app.register_blueprint(mobile_bp, url_prefix=f"{base}/mobile")
     app.register_blueprint(membership_bp, url_prefix=f"{base}/membership")
     app.register_blueprint(os_bp, url_prefix=f"{base}/os")
+    app.register_blueprint(engine_bp, url_prefix=f"{base}/engine")
 
     app.config["OAUTH_PROVIDERS"] = oauth_providers_config()

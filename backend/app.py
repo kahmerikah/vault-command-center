@@ -8,6 +8,7 @@ from backend.models import *  # noqa: F403,F401
 from backend.routes import register_routes
 from backend.services.auth_service import AuthService
 from backend.services.blockchain_service import BlockchainService
+from backend.services.engine_service import EngineService
 from backend.services.module_registry import ModuleRegistry
 from backend.services.knowledge_service import KnowledgeService
 from backend.sockets.events import register_socket_events
@@ -66,6 +67,7 @@ def create_app() -> Flask:
                 app.logger.warning("Knowledge bootstrap skipped during app init", exc_info=True)
 
     ModuleRegistry(app).bootstrap_from_manifests("modules")
+    EngineService.bootstrap(("modules",))
     register_routes(app)
     register_socket_events(socketio)
 

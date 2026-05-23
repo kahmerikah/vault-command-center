@@ -3,6 +3,7 @@ from backend.services.auth_service import AuthService
 from backend.services.blockchain_service import BlockchainService
 from backend.services.booking_service import BookingService
 from backend.services.contact_service import ContactService
+from backend.services.engine_service import EngineService
 from backend.services.integration_service import IntegrationService
 from backend.services.notification_service import NotificationService
 from backend.services.payments_service import PaymentsService
@@ -16,4 +17,5 @@ __all__ = [
     "IntegrationService",
     "NotificationService",
     "PaymentsService",
+    "EngineService",
 ]

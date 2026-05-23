@@ -35,12 +35,14 @@ def register_socket_events(socketio):
         CONNECTED_USERS[request.sid] = user_id
         join_room(f"user:{user_id}")
         join_room("ops")
+        join_room("engine")
 
         socketio.emit(
             "system:hello",
             {"message": "connected", "sid": request.sid, "user_id": user_id},
             to=request.sid,
         )
+        socketio.emit("engine:ready", {"ok": True, "user_id": user_id}, to=request.sid)
 
     @socketio.on("disconnect")
     def on_disconnect():
@@ -49,9 +51,18 @@ def register_socket_events(socketio):
         if user_id:
             leave_room(f"user:{user_id}")
         leave_room("ops")
+        leave_room("engine")
 
     @socketio.on("dashboard:subscribe")
     def on_dashboard_subscribe(payload):
         stream = (payload or {}).get("stream", "main")
         join_room(f"dashboard:{stream}")
         socketio.emit("dashboard:subscribed", {"ok": True, "payload": payload or {}}, to=request.sid)
+
+    @socketio.on("engine:subscribe")
+    def on_engine_subscribe(payload):
+        payload = payload or {}
+        for room in payload.get("rooms", ["engine"]):
+            if room:
+                join_room(room)
+        socketio.emit("engine:subscribed", {"ok": True, "rooms": payload.get("rooms", ["engine"])}, to=request.sid)
