@@ -2,7 +2,6 @@ from uuid import uuid4
 from decimal import Decimal
 from backend.extensions import db, socketio
 from backend.models import ChainTransaction, Wallet
-from backend.services.engine_service import EngineService
 from backend.services.activity_service import ActivityService
 
 
@@ -54,6 +53,8 @@ class BlockchainService:
         db.session.add(tx)
         db.session.commit()
         socketio.emit("chain:transaction", {"tx_hash": tx.tx_hash, "amount": str(tx.amount)})
+        from backend.services.engine_service import EngineService
+
         EngineService.publish_event(
             "wallet.updated",
             {

@@ -193,6 +193,8 @@ class EngineService:
                 )
                 output["executed"].append(action_type)
             elif action_type == "notify":
+                from backend.services.notification_service import NotificationService
+
                 NotificationService.create(
                     user_id=action.get("user_id") or event.actor_id,
                     title=action.get("title") or workflow.name,

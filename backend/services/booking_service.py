@@ -1,6 +1,5 @@
 from backend.extensions import db, socketio
 from backend.models import Booking
-from backend.services.engine_service import EngineService
 from backend.services.activity_service import ActivityService
 
 
@@ -18,6 +17,8 @@ class BookingService:
         db.session.add(booking)
         db.session.commit()
         socketio.emit("booking:updated", {"booking_id": booking.id, "status": booking.status})
+        from backend.services.engine_service import EngineService
+
         EngineService.publish_event(
             "booking.created",
             {

@@ -1,6 +1,5 @@
 from backend.extensions import db, socketio
 from backend.models import Notification
-from backend.services.engine_service import EngineService
 from backend.services.activity_service import ActivityService
 
 
@@ -11,6 +10,8 @@ class NotificationService:
         db.session.add(note)
         db.session.commit()
         socketio.emit("notification:new", {"user_id": user_id, "title": title, "body": body})
+        from backend.services.engine_service import EngineService
+
         EngineService.publish_event(
             "notification.created",
             {"user_id": user_id, "title": title, "body": body, "channel": channel, "notification_id": note.id},
