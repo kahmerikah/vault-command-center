@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import LandingPage from "./pages/LandingPage";
@@ -6,6 +6,7 @@ import ResetPasswordPage from "./pages/ResetPasswordPage";
 import api, { refreshSession, setAuthToken } from "./lib/api";
 import { disconnectSocket } from "./lib/socket";
 import { useVaultStore } from "./store/useVaultStore";
+import { useOperationalStore } from "./store/useOperationalStore";
 import SettingsModal from "./components/SettingsModal";
 
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
@@ -84,6 +85,9 @@ export default function App() {
     markAuthChecked,
     touchActivity,
   } = useVaultStore();
+
+  const { setMembership, toggleCommand } = useOperationalStore();
+  const gPressedRef = useRef(false);
 
   useEffect(() => {
     if (!hasHydrated) {
@@ -171,6 +175,29 @@ export default function App() {
       window.clearInterval(timer);
     };
   }, [navigate, touchActivity]);
+
+  // Load membership when authenticated
+  useEffect(() => {
+    if (!accessToken) return;
+    api.get("/membership/me").then((res) => {
+      if (res.data?.data) setMembership(res.data.data);
+    }).catch(() => {});
+  }, [accessToken, setMembership]);
+
+  // Global keyboard navigation: g+d, g+f, g+p, g+r, g+k, g+b, g+a, g+m
+  useEffect(() => {
+    if (!accessToken) return;
+    const NAV_MAP = { d: "/dashboard", f: "/financial", p: "/pda", r: "/property", k: "/knowledge", b: "/blockchain", a: "/analytics", m: "/modules" };
+    const onKeyDown = (e) => {
+      // Cmd+K handled by AppShell; skip if in input
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.isContentEditable) return;
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); toggleCommand(); return; }
+      if (e.key === "g") { gPressedRef.current = true; setTimeout(() => { gPressedRef.current = false; }, 1200); return; }
+      if (gPressedRef.current && NAV_MAP[e.key]) { e.preventDefault(); gPressedRef.current = false; navigate(NAV_MAP[e.key]); }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [accessToken, navigate, toggleCommand]);
 
   const handleAuthenticated = ({ accessToken: newAccessToken, refreshToken: newRefreshToken, user: loggedInUser }) => {
     setAuthToken(newAccessToken);

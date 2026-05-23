@@ -7,6 +7,8 @@ from backend.routes.bookings import bookings_bp
 from backend.routes.contacts import contacts_bp
 from backend.routes.briefing import briefing_bp
 from backend.routes.dashboard import dashboard_bp
+from backend.routes.membership import membership_bp
+from backend.routes.os_layer import os_bp
 from backend.routes.financial import financial_bp
 from backend.routes.health import health_bp
 from backend.routes.integrations import integrations_bp
@@ -44,5 +46,7 @@ def register_routes(app):
     app.register_blueprint(knowledge_bp, url_prefix=f"{base}/knowledge")
     app.register_blueprint(briefing_bp, url_prefix=f"{base}/briefing")
     app.register_blueprint(mobile_bp, url_prefix=f"{base}/mobile")
+    app.register_blueprint(membership_bp, url_prefix=f"{base}/membership")
+    app.register_blueprint(os_bp, url_prefix=f"{base}/os")
 
     app.config["OAUTH_PROVIDERS"] = oauth_providers_config()

@@ -1,11 +1,27 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
+import ContinuityBar from "./ContinuityBar";
+import CommandPalette from "./CommandPalette";
 import SettingsModal from "./SettingsModal";
+import { useOperationalStore } from "../store/useOperationalStore";
 
 export default function AppShell({ user, onLogout, title, children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const { toggleCommand } = useOperationalStore();
+
+  // Global Cmd+K / Ctrl+K hotkey
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        toggleCommand();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [toggleCommand]);
 
   return (
     <div className="min-h-screen bg-vault-bg p-4 text-vault-text md:p-6">
@@ -13,7 +29,7 @@ export default function AppShell({ user, onLogout, title, children }) {
         <div className={`${sidebarOpen ? "block" : "hidden"} lg:block`}>
           <Sidebar onNavigate={() => setSidebarOpen(false)} />
         </div>
-        <div className="space-y-4">
+        <div className="space-y-3">
           <Topbar
             user={user}
             onLogout={onLogout}
@@ -21,10 +37,13 @@ export default function AppShell({ user, onLogout, title, children }) {
             onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
             onOpenSettings={() => setSettingsOpen(true)}
           />
+          <ContinuityBar />
           {children}
         </div>
       </div>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <CommandPalette />
     </div>
   );
 }
+

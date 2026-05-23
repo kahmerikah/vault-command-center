@@ -6,6 +6,7 @@ from backend.models.contact import Contact
 from backend.models.financial import AllocationRule, FinancialAccount, PlaidTransaction, RoutingEvent
 from backend.models.integration import IntegrationAccount
 from backend.models.knowledge import BriefingLog, CalendarEvent, KnowledgeEntry
+from backend.models.membership import Membership
 from backend.models.logs import ActivityLog, AuditLog
 from backend.models.module import RegisteredModule
 from backend.models.notification import Notification
@@ -31,6 +32,7 @@ __all__ = [
     "FinancialAccount",
     "IntegrationAccount",
     "KnowledgeEntry",
+    "Membership",
     "Notification",
     "Payment",
     "Permission",
