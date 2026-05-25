@@ -15,7 +15,6 @@ const STATIC_ACTIONS = [
   { kind: "action", id: "nav-property",   title: "Go → Property Intel",   subtitle: "Deal flow & analysis",     url: "/property",    icon: "⬡" },
   { kind: "action", id: "nav-knowledge",  title: "Go → Knowledge OS",     subtitle: "Notes, memory, research",  url: "/knowledge",   icon: "◎" },
   { kind: "action", id: "nav-blockchain", title: "Go → Blockchain",       subtitle: "Wallet & chain activity",  url: "/blockchain",  icon: "⛓" },
-  { kind: "action", id: "nav-engine",     title: "Go → Engine Layer",     subtitle: "Shared runtime control",   url: "/engine",      icon: "⚙" },
   { kind: "action", id: "nav-analytics",  title: "Go → Analytics",        subtitle: "Metrics & performance",    url: "/analytics",   icon: "▲" },
   { kind: "action", id: "nav-bookings",   title: "Go → Bookings",         subtitle: "Events & schedule",        url: "/pda",         icon: "◷" },
   { kind: "action", id: "nav-modules",    title: "Go → Modules",          subtitle: "Infrastructure & modules", url: "/modules",     icon: "⊞" },

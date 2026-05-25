@@ -24,7 +24,6 @@ const NAV_GROUPS = [
     group: "Infrastructure",
     links: [
       { label: "Blockchain",     to: "/blockchain",  hotkey: "B",  icon: "⛓" },
-      { label: "Engine",         to: "/engine",      hotkey: "E",  icon: "⚙" },
       { label: "Modules",        to: "/modules",     hotkey: "M",  icon: "⊞" },
     ],
   },
