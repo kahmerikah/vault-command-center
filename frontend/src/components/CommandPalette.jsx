@@ -16,12 +16,22 @@ const STATIC_ACTIONS = [
   { kind: "action", id: "nav-knowledge",  title: "Go → Knowledge OS",     subtitle: "Notes, memory, research",  url: "/knowledge",   icon: "◎" },
   { kind: "action", id: "nav-blockchain", title: "Go → Blockchain",       subtitle: "Wallet & chain activity",  url: "/blockchain",  icon: "⛓" },
   { kind: "action", id: "nav-analytics",  title: "Go → Analytics",        subtitle: "Metrics & performance",    url: "/analytics",   icon: "▲" },
-  { kind: "action", id: "nav-bookings",   title: "Go → Bookings",         subtitle: "Events & schedule",        url: "/pda",         icon: "◷" },
+  { kind: "action", id: "nav-bookings",   title: "Go → Schedule",         subtitle: "Events & calendar",        url: "/pda",         icon: "◷" },
   { kind: "action", id: "nav-modules",    title: "Go → Modules",          subtitle: "Infrastructure & modules", url: "/modules",     icon: "⊞" },
+];
+
+const QUICK_ACTIONS = [
+  { kind: "command", id: "cmd-add-task",     title: "Add task",             subtitle: "Open PDA task capture",           url: "/pda#task",      icon: "+" },
+  { kind: "command", id: "cmd-add-property", title: "Track property",       subtitle: "Add address to Property Intel",    url: "/property#add",  icon: "⬡" },
+  { kind: "command", id: "cmd-add-route",    title: "Set routing rule",     subtitle: "Create income allocation lane",    url: "/financial#add-rule", icon: "→" },
+  { kind: "command", id: "cmd-sync-bank",    title: "Sync bank data",       subtitle: "Pull latest Plaid transactions",   url: "/financial#sync", icon: "↻" },
+  { kind: "command", id: "cmd-briefing",     title: "View morning brief",   subtitle: "Daily operational summary",        url: "/pda#briefing",  icon: "◐" },
+  { kind: "command", id: "cmd-infra",        title: "Infrastructure health",subtitle: "Container + server status",        url: "/dashboard",     icon: "◆" },
 ];
 
 const KIND_COLORS = {
   action:      "text-vault-accent",
+  command:     "text-cyan-400",
   property:    "text-emerald-400",
   knowledge:   "text-sky-400",
   contact:     "text-violet-400",
@@ -31,6 +41,7 @@ const KIND_COLORS = {
 
 const KIND_ICONS = {
   action:      "⚡",
+  command:     "⌘",
   property:    "⬡",
   knowledge:   "◎",
   contact:     "◉",
@@ -79,7 +90,30 @@ export default function CommandPalette() {
     }, 220);
   }, [query]);
 
-  const displayedItems = query.trim().length >= 2 ? results : STATIC_ACTIONS;
+  const recentItems = (useOperationalStore.getState().recentlyViewed || []).slice(0, 4).map((item) => ({
+    ...item,
+    kind: item.kind || "action",
+    subtitle: "recently viewed",
+  }));
+
+  const defaultItems = recentItems.length > 0
+    ? [
+        ...recentItems,
+        { kind: "_divider", id: "div-quick", title: "QUICK ACTIONS" },
+        ...QUICK_ACTIONS,
+        { kind: "_divider", id: "div-nav", title: "NAVIGATE" },
+        ...STATIC_ACTIONS,
+      ]
+    : [
+        { kind: "_divider", id: "div-quick", title: "QUICK ACTIONS" },
+        ...QUICK_ACTIONS,
+        { kind: "_divider", id: "div-nav", title: "NAVIGATE" },
+        ...STATIC_ACTIONS,
+      ];
+
+  const displayedItems = query.trim().length >= 2
+    ? results
+    : defaultItems.filter((i) => i.kind !== "_divider");
 
   const activate = useCallback(
     (item) => {
@@ -168,12 +202,44 @@ export default function CommandPalette() {
                   No results for "{query}"
                 </li>
               )}
-              {displayedItems.length === 0 && query.trim().length < 2 && (
-                <li className="px-5 py-2 font-mono text-[10px] uppercase tracking-[0.24em] text-vault-textDim">
-                  Quick actions
-                </li>
-              )}
-              {displayedItems.map((item, idx) => (
+              {query.trim().length < 2 && defaultItems.map((item, idx) => {
+                if (item.kind === "_divider") {
+                  return (
+                    <li key={item.id} className="px-5 pt-3 pb-1 font-mono text-[9px] uppercase tracking-[0.28em] text-vault-accent/40 select-none">
+                      {item.title}
+                    </li>
+                  );
+                }
+                const visibleIdx = defaultItems.slice(0, idx + 1).filter((i) => i.kind !== "_divider").length - 1;
+                return (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      onMouseEnter={() => setActiveIdx(visibleIdx)}
+                      onClick={() => activate(item)}
+                      className={`w-full flex items-center gap-3 px-5 py-3 text-left transition-colors ${
+                        visibleIdx === activeIdx
+                          ? "bg-vault-accent/10 border-l-2 border-vault-accent"
+                          : "border-l-2 border-transparent hover:bg-vault-bg/40"
+                      }`}
+                    >
+                      <span className={`w-7 h-7 flex items-center justify-center rounded-lg border border-vault-accent/20 bg-vault-bg/60 text-sm flex-shrink-0 ${KIND_COLORS[item.kind] || "text-vault-text"}`}>
+                        {item.icon || KIND_ICONS[item.kind] || "·"}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-vault-text truncate">{item.title}</p>
+                        {item.subtitle && (
+                          <p className="text-[11px] text-vault-textDim font-mono truncate mt-0.5">{item.subtitle}</p>
+                        )}
+                      </div>
+                      <span className={`text-[10px] font-mono uppercase tracking-[0.18em] flex-shrink-0 ${KIND_COLORS[item.kind] || "text-vault-textDim"}`}>
+                        {item.kind}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+              {query.trim().length >= 2 && displayedItems.map((item, idx) => (
                 <li key={item.id}>
                   <button
                     type="button"
@@ -214,6 +280,10 @@ export default function CommandPalette() {
               </span>
               <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-vault-textDim">
                 <kbd className="border border-vault-accent/20 rounded px-1 mr-1">esc</kbd>close
+              </span>
+              <span className="flex-1" />
+              <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-vault-accent/30">
+                SOMB OS — CMD LAYER
               </span>
             </div>
           </motion.div>

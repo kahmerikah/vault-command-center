@@ -1520,11 +1520,23 @@ export default function PDAPage() {
                     </button>
                   </div>
                   {zillowResults.length ? (
-                    <div className="mt-2 max-h-40 space-y-1 overflow-auto">
+                    <div className="mt-2 max-h-48 space-y-1 overflow-auto">
                       {zillowResults.map((result, index) => (
-                        <div key={`${result.zpid || result.address || "z"}-${index}`} className="rounded border border-vault-accent/15 px-2 py-1">
-                          <p className="text-vault-text">{result.address || "Property"}</p>
-                          <p className="text-vault-textDim">${result.price || "n/a"} • {result.bedrooms || "-"}bd / {result.bathrooms || "-"}ba • {result.sqft || "-"} sqft</p>
+                        <div key={`${result.zpid || result.address || "z"}-${index}`} className="rounded border border-vault-accent/15 px-2 py-1.5">
+                          <p className="text-vault-text text-xs font-semibold">{result.address || "Property"}</p>
+                          <p className="text-vault-textDim text-[11px]">${result.price || "n/a"} · {result.bedrooms || "-"}bd / {result.bathrooms || "-"}ba · {result.sqft || "-"} sqft</p>
+                          <div className="mt-1 flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const q = encodeURIComponent(result.address || "");
+                                window.location.assign(`/property?address=${q}`);
+                              }}
+                              className="text-[10px] font-mono uppercase tracking-[0.14em] border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 px-2 py-0.5 rounded hover:bg-emerald-500/20 transition-colors"
+                            >
+                              Track in Property Intel →
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>

@@ -196,6 +196,22 @@ export default function FinancialPage() {
     [load]
   );
 
+  const deleteRule = useCallback(
+    async (rule) => {
+      if (!window.confirm(`Delete routing rule "${rule.name}"? This cannot be undone.`)) return;
+      setActionError("");
+      setActionNotice("");
+      try {
+        await api.delete(`/financial/allocation-rules/${rule.id}`);
+        setActionNotice(`Rule "${rule.name}" deleted.`);
+        await load();
+      } catch (err) {
+        setActionError(err?.response?.data?.error || "Could not delete rule.");
+      }
+    },
+    [load]
+  );
+
   const runRouter = useCallback(
     async (event) => {
       event.preventDefault();
@@ -319,6 +335,12 @@ export default function FinancialPage() {
       .filter((rule) => rule.is_active && ["savings", "invest", "reserve"].some((needle) => String(rule.destination_tag || "").toLowerCase().includes(needle)))
       .reduce((sum, rule) => sum + Number(rule.allocation_pct || 0), 0);
 
+    // Runway: months of available cash at current monthly burn rate.
+    const last30DaysBurn = parsedTransactions
+      .filter((tx) => tx.numericAmount < 0 && tx.when >= new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000))
+      .reduce((sum, tx) => sum + Math.abs(tx.numericAmount), 0);
+    const runwayMonths = last30DaysBurn > 0 ? (availableCash / last30DaysBurn).toFixed(1) : null;
+
     return {
       totalLiquidity,
       availableCash,
@@ -329,6 +351,8 @@ export default function FinancialPage() {
       safeToSpend,
       burnTrendPct,
       savingsRulePct,
+      runwayMonths,
+      monthlyBurn: last30DaysBurn,
     };
   }, [accounts, parsedTransactions, rules]);
 
@@ -342,14 +366,21 @@ export default function FinancialPage() {
     }));
   }, [rules]);
 
-  const billsDue = useMemo(
-    () =>
-      parsedTransactions
-        .filter((tx) => tx.numericAmount < 0)
-        .sort((a, b) => a.when.getTime() - b.when.getTime())
-        .slice(0, 6),
-    [parsedTransactions]
-  );
+  const billsDue = useMemo(() => {
+    const now = new Date();
+    const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    // Prefer genuinely upcoming (future-dated) scheduled expenses.
+    const upcoming = parsedTransactions
+      .filter((tx) => tx.numericAmount < 0 && tx.when > now && tx.when <= in30Days)
+      .sort((a, b) => a.when.getTime() - b.when.getTime())
+      .slice(0, 6);
+    if (upcoming.length > 0) return upcoming;
+    // Fallback: show most recent recurring expenses as a proxy for what recurs.
+    return parsedTransactions
+      .filter((tx) => tx.numericAmount < 0 && tx.is_recurring)
+      .sort((a, b) => b.when.getTime() - a.when.getTime())
+      .slice(0, 6);
+  }, [parsedTransactions]);
 
   const unusualSpending = useMemo(() => {
     const expenses = parsedTransactions.filter((tx) => tx.numericAmount < 0).map((tx) => Math.abs(tx.numericAmount));
@@ -408,12 +439,12 @@ export default function FinancialPage() {
         <GlassPanel title="Treasury Control" className="p-3">
           <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6">
             <Metric label="Liquidity" value={`$${metrics.totalLiquidity.toLocaleString("en-US", { minimumFractionDigits: 2 })}`} tone="text-vault-text" />
-            <Metric label="Spendable Cash" value={`$${metrics.safeToSpend.toLocaleString("en-US", { minimumFractionDigits: 2 })}`} tone="text-emerald-300" />
-            <Metric label="Upcoming Bills" value={`$${metrics.upcomingBills.toLocaleString("en-US", { minimumFractionDigits: 2 })}`} tone="text-amber-300" />
-            <Metric label="Incoming Cash (7d)" value={`$${metrics.incomingSoon.toLocaleString("en-US", { minimumFractionDigits: 2 })}`} tone="text-cyan-300" />
+            <Metric label="Safe to Spend" value={`$${metrics.safeToSpend.toLocaleString("en-US", { minimumFractionDigits: 2 })}`} tone="text-emerald-300" />
+            <Metric label="Monthly Burn" value={`$${metrics.monthlyBurn.toLocaleString("en-US", { minimumFractionDigits: 2 })}`} tone={metrics.monthlyBurn > metrics.availableCash * 0.5 ? "text-red-300" : "text-amber-300"} />
+            <Metric label="Runway" value={metrics.runwayMonths ? `${metrics.runwayMonths}mo` : "—"} tone={metrics.runwayMonths && Number(metrics.runwayMonths) < 3 ? "text-red-300" : "text-cyan-300"} />
             <Metric label="Savings Routing" value={`${metrics.savingsRulePct.toFixed(0)}%`} tone="text-vault-text" />
             <Metric
-              label="Weekly Burn Trend"
+              label="Burn Trend (7d)"
               value={`${metrics.burnTrendPct > 0 ? "+" : ""}${metrics.burnTrendPct}%`}
               tone={metrics.burnTrendPct <= 0 ? "text-emerald-300" : "text-amber-300"}
             />
@@ -480,9 +511,14 @@ export default function FinancialPage() {
                       </div>
                       <div className="mt-1 flex items-center justify-between text-[10px] text-vault-textDim">
                         <span>{rule.destination_tag}</span>
-                        <button type="button" onClick={() => toggleRule(rule)} className="rounded border border-vault-accent/25 px-1.5 py-0.5">
-                          {rule.is_active ? "Pause" : "Resume"}
-                        </button>
+                        <div className="flex gap-1">
+                          <button type="button" onClick={() => toggleRule(rule)} className="rounded border border-vault-accent/25 px-1.5 py-0.5">
+                            {rule.is_active ? "Pause" : "Resume"}
+                          </button>
+                          <button type="button" onClick={() => deleteRule(rule)} className="rounded border border-red-500/25 px-1.5 py-0.5 text-red-400 hover:bg-red-500/10">
+                            ×
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -635,7 +671,11 @@ export default function FinancialPage() {
                   <p className="text-[10px] text-vault-textDim">after bills and reserve target</p>
                 </div>
 
-                <InsightList title="Bills due soon" items={billsDue} amountTone="text-amber-300" />
+                <InsightList
+                  title={billsDue.some((tx) => tx.when > new Date()) ? "Bills due soon" : "Recurring expenses"}
+                  items={billsDue}
+                  amountTone="text-amber-300"
+                />
                 <InsightList title="Unusual spending" items={unusualSpending} amountTone="text-red-300" />
                 <InsightList title="Ops spend" items={hostingExpenses} amountTone="text-vault-textDim" />
               </div>
@@ -656,8 +696,16 @@ export default function FinancialPage() {
               </div>
 
               {routeResult?.routing_events?.length ? (
-                <div className="mt-2 rounded border border-emerald-500/30 bg-emerald-500/10 p-2 text-xs text-emerald-200">
-                  Latest simulation produced {routeResult.routing_events.length} routing moves.
+                <div className="mt-2 rounded border border-emerald-500/30 bg-emerald-500/10 p-2 text-xs text-emerald-200 space-y-1">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-emerald-400">
+                    Simulation — {routeResult.routing_events.length} moves
+                  </p>
+                  {routeResult.routing_events.map((ev, i) => (
+                    <div key={i} className="flex items-center justify-between text-emerald-100">
+                      <span>{ev.destination_tag || ev.rule_name || "lane"}</span>
+                      <span>${Number(ev.amount_routed || ev.amount || 0).toFixed(2)}</span>
+                    </div>
+                  ))}
                 </div>
               ) : null}
             </GlassPanel>

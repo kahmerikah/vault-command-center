@@ -49,6 +49,15 @@ export default function ContinuityBar() {
     ? Math.round((new Date(nextEvent.starts_at) - Date.now()) / 60_000)
     : null;
 
+  function formatCountdown(mins) {
+    if (mins <= 0) return "now";
+    if (mins < 60) return `in ${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `in ${hrs}h`;
+    const days = Math.floor(hrs / 24);
+    return `in ${days}d`;
+  }
+
   return (
     <div className="flex items-center gap-2 flex-wrap rounded-xl border border-vault-accent/10 bg-vault-panel/40 px-4 py-2 backdrop-blur-sm overflow-x-auto">
       {/* System label */}
@@ -69,8 +78,9 @@ export default function ContinuityBar() {
       {/* Upcoming event */}
       {nextEvent ? (
         <Chip
-          label={minutesUntil !== null && minutesUntil <= 60 ? `in ${minutesUntil}m` : "next"}
+          label={minutesUntil !== null ? formatCountdown(minutesUntil) : "next"}
           value={nextEvent.title.length > 28 ? nextEvent.title.slice(0, 28) + "…" : nextEvent.title}
+          accent={minutesUntil !== null && minutesUntil <= 30}
           onClick={() => navigate("/pda")}
         />
       ) : (
@@ -84,7 +94,7 @@ export default function ContinuityBar() {
         label="tasks"
         value={context.open_tasks ?? 0}
         accent={(context.open_tasks ?? 0) > 0}
-        onClick={() => navigate("/knowledge")}
+        onClick={() => navigate("/pda")}
       />
 
       {/* Unread notifications */}
@@ -103,6 +113,16 @@ export default function ContinuityBar() {
           label="deals"
           value={context.active_properties}
           onClick={() => navigate("/property")}
+        />
+      )}
+
+      {/* Financial alert: high burn rate surfaced from context */}
+      {context.burn_alert && (
+        <Chip
+          label="burn"
+          value={context.burn_alert}
+          accent
+          onClick={() => navigate("/financial")}
         />
       )}
 

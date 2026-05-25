@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import api, { setAuthToken } from "../lib/api";
 import { disconnectSocket } from "../lib/socket";
 import { useVaultStore } from "../store/useVaultStore";
@@ -62,7 +63,7 @@ function numericOrNull(value) {
   if (value === "" || value === null || value === undefined) {
     return null;
   }
-  const n = Number(String(value).replace(/,/g, "").trim());
+  const n = Number(String(value).replace(/[$,]/g, "").trim());
   return Number.isFinite(n) ? n : null;
 }
 
@@ -109,6 +110,7 @@ function extractTags(text) {
 
 export default function PropertyPage() {
   const { accessToken, refreshToken, user, clearAuth } = useVaultStore();
+  const [searchParams] = useSearchParams();
 
   const [properties, setProperties] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -209,6 +211,14 @@ export default function PropertyPage() {
   useEffect(() => {
     loadProperties();
   }, [loadProperties]);
+
+  // Pre-fill address from ?address= query param (e.g. deep-linked from PDA Zillow lookup)
+  useEffect(() => {
+    const addrParam = searchParams.get("address");
+    if (addrParam) {
+      setAnalysisForm((prev) => ({ ...prev, address: decodeURIComponent(addrParam) }));
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -819,9 +829,76 @@ export default function PropertyPage() {
         ) : null}
 
         {!analysis ? (
-          <div className="somb-empty-state">
-            <p className="font-mono text-xs text-slate-200">Start with one address in the search bar.</p>
-            <p className="mt-1 font-mono text-xs text-slate-500">The system will enrich property data, pull comps, estimate value, and classify opportunity automatically.</p>
+          <div className="space-y-4">
+            {/* Market Intelligence Context — shown when no analysis is active */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { label: "Sacramento median $/sqft", value: "$320", tone: "text-emerald-300", note: "Sacramento CA" },
+                { label: "Rancho Cordova median $/sqft", value: "$278", tone: "text-emerald-300", note: "Sacramento suburb" },
+                { label: "National median $/sqft", value: "$185", tone: "text-vault-text", note: "US average" },
+                { label: "7% interest rate", value: "30yr fixed", tone: "text-amber-300", note: "Current rate environment" },
+              ].map((item) => (
+                <div key={item.label} className="rounded-xl border border-white/10 bg-black/25 px-3 py-3">
+                  <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-slate-500">{item.label}</p>
+                  <p className={`font-mono text-base mt-1 ${item.tone}`}>{item.value}</p>
+                  <p className="font-mono text-[10px] text-slate-600 mt-0.5">{item.note}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-xl border border-vault-accent/15 bg-vault-accent/5 px-4 py-3 flex items-start gap-3">
+              <span className="text-vault-accent text-lg mt-0.5">⬡</span>
+              <div>
+                <p className="font-mono text-xs text-vault-text font-semibold">PROPERTY INTELLIGENCE ENGINE — READY</p>
+                <p className="font-mono text-[11px] text-slate-400 mt-1">
+                  Enter an address above to get AVM valuation, deal scoring, comp analysis, cash flow estimate, and opportunity classification.
+                  Use <span className="text-cyan-300">Scrape Zillow/Realtor</span> to auto-pull comps and subject property details.
+                </p>
+              </div>
+            </div>
+
+            {properties.length > 0 && (
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-500 mb-2">Pipeline Snapshot</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                  {properties.slice(0, 6).map((prop) => {
+                    const cashflow = deriveCashFlow(prop);
+                    const underval = deriveUndervaluationPct(prop.listing_price, prop.estimated_value);
+                    return (
+                      <button
+                        key={prop.id}
+                        type="button"
+                        onClick={() => openProperty(prop.id)}
+                        className="text-left rounded-xl border border-white/10 bg-black/25 px-3 py-3 hover:border-vault-accent/40 hover:bg-vault-accent/5 transition-all"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="font-mono text-xs text-white truncate">{prop.address}</p>
+                          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${statusTone[prop.status] || "text-slate-400 border-slate-400/20"} flex-shrink-0`}>
+                            {prop.status}
+                          </span>
+                        </div>
+                        <div className="mt-2 grid grid-cols-3 gap-2 text-[10px] font-mono">
+                          <div>
+                            <p className="text-slate-500">Score</p>
+                            <p className="text-white">{prop.deal_score ? `${Number(prop.deal_score).toFixed(0)}` : "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-500">Value</p>
+                            <p className="text-emerald-300">{formatMoney(prop.estimated_value)}</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-500">{underval !== null ? "Underval" : "CF/mo"}</p>
+                            <p className={underval !== null && underval > 0 ? "text-emerald-300" : underval !== null && underval < -5 ? "text-red-400" : "text-white"}>
+                              {underval !== null ? formatPercent(underval, 1) : formatMoney(cashflow)}
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-[1.4fr_1fr] gap-4">

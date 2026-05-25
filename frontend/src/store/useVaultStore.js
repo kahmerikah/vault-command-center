@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 const IDLE_TIMEOUT_MS = 1000 * 60 * 30;
+const ACTIVITY_THROTTLE_MS = 10_000; // throttle touchActivity writes to once per 10s
 
 export const useVaultStore = create(
   persist(
@@ -22,7 +23,12 @@ export const useVaultStore = create(
           authChecked: true,
           lastActiveAt: Date.now(),
         }),
-      touchActivity: () => set({ lastActiveAt: Date.now() }),
+      touchActivity: () => {
+        // Throttle: only write to the store if enough time has passed since last write.
+        if (Date.now() - get().lastActiveAt >= ACTIVITY_THROTTLE_MS) {
+          set({ lastActiveAt: Date.now() });
+        }
+      },
       markAuthChecked: () => set({ authChecked: true }),
       setHasHydrated: (hasHydrated) => set({ hasHydrated }),
       clearAuth: () =>

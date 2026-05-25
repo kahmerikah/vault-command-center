@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import LandingPage from "./pages/LandingPage";
@@ -7,7 +7,6 @@ import api, { refreshSession, setAuthToken } from "./lib/api";
 import { disconnectSocket } from "./lib/socket";
 import { useVaultStore } from "./store/useVaultStore";
 import { useOperationalStore } from "./store/useOperationalStore";
-import SettingsModal from "./components/SettingsModal";
 
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const AuthPage = lazy(() => import("./pages/AuthPage"));
@@ -74,7 +73,6 @@ function ProtectedPage({ element }) {
 }
 
 export default function App() {
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const {
@@ -86,7 +84,7 @@ export default function App() {
     touchActivity,
   } = useVaultStore();
 
-  const { setMembership, toggleCommand } = useOperationalStore();
+  const { setMembership, toggleCommand, openSettings } = useOperationalStore();
   const gPressedRef = useRef(false);
 
   useEffect(() => {
@@ -192,6 +190,7 @@ export default function App() {
       // Cmd+K handled by AppShell; skip if in input
       if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.isContentEditable) return;
       if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); toggleCommand(); return; }
+      // g+letter chord: only start if not in any editable context
       if (e.key === "g") { gPressedRef.current = true; setTimeout(() => { gPressedRef.current = false; }, 1200); return; }
       if (gPressedRef.current && NAV_MAP[e.key]) { e.preventDefault(); gPressedRef.current = false; navigate(NAV_MAP[e.key]); }
     };
@@ -211,13 +210,12 @@ export default function App() {
       {accessToken && (
         <button
           type="button"
-          onClick={() => setSettingsOpen(true)}
+          onClick={openSettings}
           className="fixed bottom-4 right-4 z-40 rounded-full border border-vault-accent/40 bg-vault-panel/80 px-4 py-2 text-xs uppercase tracking-[0.16em] text-vault-textDim hover:text-white"
         >
           Settings
         </button>
       )}
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <Routes>
       <Route path="/" element={<LandingPage onAuthenticated={handleAuthenticated} />} />
       <Route path="/login" element={<LandingPage onAuthenticated={handleAuthenticated} />} />

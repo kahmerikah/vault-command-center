@@ -14,6 +14,11 @@ export const useOperationalStore = create(
       closeCommand: () => set({ commandOpen: false }),
       toggleCommand: () => set((s) => ({ commandOpen: !s.commandOpen })),
 
+      // Settings modal (centralized to avoid duplicate DOM instances)
+      settingsOpen: false,
+      openSettings: () => set({ settingsOpen: true }),
+      closeSettings: () => set({ settingsOpen: false }),
+
       // Continuity context (synced from /os/context)
       context: {
         upcoming_events: [],

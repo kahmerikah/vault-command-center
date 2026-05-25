@@ -8,8 +8,7 @@ import { useOperationalStore } from "../store/useOperationalStore";
 
 export default function AppShell({ user, onLogout, title, children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const { toggleCommand } = useOperationalStore();
+  const { toggleCommand, openSettings, settingsOpen, closeSettings } = useOperationalStore();
 
   // Global Cmd+K / Ctrl+K hotkey
   useEffect(() => {
@@ -35,13 +34,13 @@ export default function AppShell({ user, onLogout, title, children }) {
             onLogout={onLogout}
             title={title}
             onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
-            onOpenSettings={() => setSettingsOpen(true)}
+            onOpenSettings={openSettings}
           />
           <ContinuityBar />
           {children}
         </div>
       </div>
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsModal open={settingsOpen} onClose={closeSettings} />
       <CommandPalette />
     </div>
   );
