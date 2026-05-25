@@ -156,6 +156,16 @@ class PropertyService:
     @staticmethod
     def analyze(prop: Property) -> Property:
         """Run the internal AVM and persist valuation fields."""
+        subject_details = {}
+        try:
+            from backend.services.property_scraper_service import PropertyScraperService
+
+            # Keep persisted valuations aligned with live estimate flow by enriching
+            # from Zillow subject details (including zestimate) when available.
+            subject_details = PropertyScraperService.scrape_subject_property(address=prop.address) or {}
+        except Exception:
+            subject_details = {}
+
         result = PropertyService._run_internal_avm(
             {
                 "address": prop.address,
@@ -163,14 +173,15 @@ class PropertyService:
                 "city": prop.city,
                 "state": prop.state,
                 "property_type": prop.property_type,
-                "bedrooms": prop.bedrooms,
-                "bathrooms": prop.bathrooms,
+                "bedrooms": prop.bedrooms or subject_details.get("bedrooms"),
+                "bathrooms": prop.bathrooms or subject_details.get("bathrooms"),
                 "lot_size_sqft": prop.lot_size_sqft,
-                "latitude": prop.latitude,
-                "longitude": prop.longitude,
-                "year_built": prop.year_built,
+                "latitude": prop.latitude or subject_details.get("latitude"),
+                "longitude": prop.longitude or subject_details.get("longitude"),
+                "year_built": prop.year_built or subject_details.get("year_built"),
                 "listing_price": prop.listing_price,
-                "sqft": prop.sqft,
+                "sqft": prop.sqft or subject_details.get("sqft"),
+                "zestimate": subject_details.get("zestimate"),
             },
             property_id=prop.id,
         )
