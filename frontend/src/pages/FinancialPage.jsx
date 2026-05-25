@@ -9,6 +9,11 @@ import { useVaultStore } from "../store/useVaultStore";
 export default function FinancialPage() {
   const { accessToken, refreshToken, user, clearAuth } = useVaultStore();
 
+  const currencySymbols = useMemo(
+    () => ({ USD: "$", INR: "₹", EUR: "€" }),
+    []
+  );
+
   const [accounts, setAccounts] = useState([]);
   const [rules, setRules] = useState([]);
   const [transactions, setTransactions] = useState([]);
@@ -46,8 +51,16 @@ export default function FinancialPage() {
   const [txFilter, setTxFilter] = useState("all");
   const [txSort, setTxSort] = useState("date_desc");
 
+  const [fxFrom, setFxFrom] = useState("USD");
+  const [fxTo, setFxTo] = useState("INR");
+  const [fxAmount, setFxAmount] = useState("1");
+  const [fxConverted, setFxConverted] = useState(0);
+  const [fxLoading, setFxLoading] = useState(false);
+  const [fxError, setFxError] = useState("");
+
   const searchRef = useRef(null);
   const routeRef = useRef(null);
+  const fxAnimationRef = useRef(null);
 
   const handleLogout = useCallback(async () => {
     try {
@@ -425,6 +438,71 @@ export default function FinancialPage() {
       .slice(0, 14);
   }, [filteredTransactions, routing]);
 
+  const animateFxValue = useCallback((start, end, duration = 500) => {
+    if (fxAnimationRef.current) {
+      window.cancelAnimationFrame(fxAnimationRef.current);
+      fxAnimationRef.current = null;
+    }
+
+    const startedAt = performance.now();
+    const step = (now) => {
+      const progress = Math.min((now - startedAt) / duration, 1);
+      const next = start + (end - start) * progress;
+      setFxConverted(next);
+      if (progress < 1) {
+        fxAnimationRef.current = window.requestAnimationFrame(step);
+      }
+    };
+
+    fxAnimationRef.current = window.requestAnimationFrame(step);
+  }, []);
+
+  const convertCurrency = useCallback(async () => {
+    const amount = Number.parseFloat(fxAmount);
+    if (!Number.isFinite(amount) || amount < 0) {
+      setFxError("Enter a valid amount.");
+      return;
+    }
+
+    setFxLoading(true);
+    setFxError("");
+
+    try {
+      const response = await fetch(`https://api.exchangerate-api.com/v4/latest/${fxFrom}`);
+      if (!response.ok) {
+        throw new Error("Rate API unavailable");
+      }
+      const data = await response.json();
+      const rate = data?.rates?.[fxTo];
+      if (!Number.isFinite(rate)) {
+        throw new Error("Missing conversion rate");
+      }
+      const result = amount * rate;
+      animateFxValue(fxConverted, result, 500);
+    } catch {
+      setFxError("Currency conversion failed.");
+    } finally {
+      setFxLoading(false);
+    }
+  }, [animateFxValue, fxAmount, fxConverted, fxFrom, fxTo]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      convertCurrency();
+    }, 180);
+
+    return () => window.clearTimeout(timer);
+  }, [convertCurrency]);
+
+  useEffect(
+    () => () => {
+      if (fxAnimationRef.current) {
+        window.cancelAnimationFrame(fxAnimationRef.current);
+      }
+    },
+    []
+  );
+
   if (loading) {
     return (
       <AppShell user={user} onLogout={handleLogout} title="financial os">
@@ -708,6 +786,44 @@ export default function FinancialPage() {
                   ))}
                 </div>
               ) : null}
+            </GlassPanel>
+
+            <GlassPanel title="Currency Converter" className="p-3">
+              <div className="rounded-lg border-2 border-cyan-300/80 bg-[#111] p-4 text-center shadow-[0_0_24px_rgba(34,211,238,0.35)]">
+                <h2 className="mb-2 text-sm uppercase tracking-[0.14em] text-cyan-300">Currency Converter</h2>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <select
+                    value={fxFrom}
+                    onChange={(event) => setFxFrom(event.target.value)}
+                    className="h-10 rounded border border-cyan-400/20 bg-[#222] px-3 text-sm text-cyan-300 outline-none"
+                  >
+                    <option value="USD">USD</option>
+                    <option value="INR">INR</option>
+                    <option value="EUR">EUR</option>
+                  </select>
+                  <select
+                    value={fxTo}
+                    onChange={(event) => setFxTo(event.target.value)}
+                    className="h-10 rounded border border-cyan-400/20 bg-[#222] px-3 text-sm text-cyan-300 outline-none"
+                  >
+                    <option value="INR">INR</option>
+                    <option value="USD">USD</option>
+                    <option value="EUR">EUR</option>
+                  </select>
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  value={fxAmount}
+                  onChange={(event) => setFxAmount(event.target.value)}
+                  className="mt-2 h-10 w-full rounded border border-cyan-400/20 bg-[#222] px-3 text-sm text-cyan-300 outline-none"
+                />
+                <div className="mt-3 text-xl text-cyan-200">
+                  Converted: {currencySymbols[fxTo] || ""} <span>{fxConverted.toFixed(2)}</span>
+                </div>
+                {fxLoading ? <p className="mt-1 text-[11px] text-cyan-400">Updating rate...</p> : null}
+                {fxError ? <p className="mt-1 text-[11px] text-red-300">{fxError}</p> : null}
+              </div>
             </GlassPanel>
           </div>
         </div>
