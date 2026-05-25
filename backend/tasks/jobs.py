@@ -126,9 +126,77 @@ def re_analyze_properties_task(user_id: str = None):
     return {"status": "done", "task": "re_analyze_properties"}
 
 
+@celery_app.task(name="vault.property.scrape_and_analyze", bind=True, max_retries=2)
+def scrape_and_analyze_property_task(self, *, property_id: str):
+    """Scrape fresh comps for a single property then re-run the AVM analysis."""
+    from backend.app import create_app
+    app = create_app()
+    with app.app_context():
+        from backend.models.property import Property
+        from backend.services.property_scraper_service import PropertyScraperService
+        from backend.services.property_service import PropertyService
+        from backend.services.activity_service import ActivityService
+        from backend.extensions import db
+
+        prop = Property.query.get(property_id)
+        if not prop:
+            return {"status": "skipped", "reason": "property not found", "property_id": property_id}
+
+        try:
+            comps = PropertyScraperService.scrape_market_comps(
+                address=prop.address or "",
+                zip_code=prop.zip_code,
+                property_type=prop.property_type,
+                subject_latitude=float(prop.latitude) if prop.latitude is not None else None,
+                subject_longitude=float(prop.longitude) if prop.longitude is not None else None,
+                max_results=12,
+            )
+            inserted = 0
+            if comps:
+                inserted = PropertyScraperService.store_comps_for_property(
+                    property_id=property_id, comps=comps
+                )
+
+            PropertyService.analyze(prop)
+            db.session.commit()
+
+            ActivityService.log(
+                user_id=prop.user_id,
+                message=f"Property {prop.address} — scraped {inserted} new comps & AVM updated",
+                level="info",
+            )
+            return {
+                "status": "done",
+                "task": "scrape_and_analyze",
+                "property_id": property_id,
+                "comps_inserted": inserted,
+            }
+        except Exception as exc:
+            raise self.retry(exc=exc, countdown=30)
+
+
+@celery_app.task(name="vault.property.scrape_and_analyze_all")
+def scrape_and_analyze_all_task(user_id: str = None):
+    """Bulk scrape + re-analyze for all watched/interested properties."""
+    from backend.app import create_app
+    app = create_app()
+    with app.app_context():
+        from backend.models.property import Property
+
+        q = Property.query.filter(Property.status.in_(["watching", "interested"]))
+        if user_id:
+            q = q.filter_by(user_id=user_id)
+
+        enqueued = 0
+        for prop in q.all():
+            scrape_and_analyze_property_task.delay(property_id=str(prop.id))
+            enqueued += 1
+
+    return {"status": "done", "task": "scrape_and_analyze_all", "enqueued": enqueued}
+
+
 @celery_app.task(name="vault.health.check")
-def health_check_task():
-    """Periodic health check — logs results as activity events."""
+def health_check_task():    """Periodic health check — logs results as activity events."""
     from backend.app import create_app
     app = create_app()
     with app.app_context():

@@ -1,21 +1,17 @@
 """Property Intelligence Engine.
 
-Evaluates real estate properties against local comps to score deals.
-
-External API (optional):
-    Uses RapidAPI Zillow endpoint when RAPIDAPI_KEY + RAPIDAPI_HOST_ZILLOW are set.
-    Falls back to internal comp database only if not configured.
+Evaluates real estate properties with an internal AVM that weights nearby
+comparables by property type, size, beds/baths, age, and location.
 """
-import os
-import math
 import re
-import requests
+import math
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, date
 from typing import Optional
 from backend.extensions import db
 from backend.models.property import Property, PropertyComp
 from backend.services.activity_service import ActivityService
+from backend.services.avm_calibration_service import AVMCalibrationService
 
 
 class PropertyService:
@@ -23,57 +19,178 @@ class PropertyService:
 
     @staticmethod
     def estimate_value(data: dict) -> dict:
-        """Estimate value/deal metrics from address with optional zip override."""
-        address = str(data.get("address") or "").strip()
-        if not address:
-            raise ValueError("address required")
+        """Estimate value/deal metrics from subject property features and nearby comps."""
+        normalized = PropertyService._normalize_property_inputs(data)
+        result = PropertyService._run_internal_avm(
+            {
+                "address": normalized["address"],
+                "zip_code": normalized["zip_code"],
+                "city": normalized.get("city"),
+                "state": normalized.get("state"),
+                "property_type": normalized.get("property_type", "single_family"),
+                "bedrooms": normalized.get("bedrooms"),
+                "bathrooms": normalized.get("bathrooms"),
+                "lot_size_sqft": normalized.get("lot_size_sqft"),
+                "latitude": normalized.get("latitude"),
+                "longitude": normalized.get("longitude"),
+                "year_built": normalized.get("year_built"),
+                "listing_price": normalized.get("listing_price"),
+                "sqft": normalized.get("sqft"),
+                "target_roi_pct": _to_decimal(data.get("target_roi_pct")),
+                "rehab_estimate": _to_decimal(data.get("rehab_estimate")),
+                "down_payment_pct": _to_decimal(data.get("down_payment_pct")) or Decimal("20"),
+                "interest_rate_pct": _to_decimal(data.get("interest_rate_pct")) or Decimal("7"),
+                "loan_years": _to_int(data.get("loan_years")) or 30,
+                "expense_ratio_pct": _to_decimal(data.get("expense_ratio_pct")) or Decimal("35"),
+            },
+            extra_comps=data.get("scraped_comps") or [],
+        )
+        result["source"] = normalized.get("source", "manual")
+        result["status"] = normalized.get("status", "watching")
+        result["notes"] = normalized.get("notes")
+        return result
 
-        listing_price = _to_decimal(data.get("listing_price"))
-        sqft = _to_int(data.get("sqft"))
-        property_type = data.get("property_type") or "single_family"
+    @staticmethod
+    def add_property(user_id: str, data: dict) -> Property:
+        normalized = PropertyService._normalize_property_inputs(data)
+        prop = Property(
+            user_id=user_id,
+            address=normalized["address"],
+            city=normalized.get("city"),
+            state=normalized.get("state"),
+            zip_code=normalized["zip_code"],
+            property_type=normalized.get("property_type", "single_family"),
+            bedrooms=normalized.get("bedrooms"),
+            bathrooms=normalized.get("bathrooms"),
+            sqft=normalized.get("sqft"),
+            lot_size_sqft=normalized.get("lot_size_sqft"),
+            latitude=normalized.get("latitude"),
+            longitude=normalized.get("longitude"),
+            year_built=normalized.get("year_built"),
+            listing_price=normalized.get("listing_price"),
+            notes=normalized.get("notes"),
+            source=normalized.get("source", "manual"),
+            status=normalized.get("status", "watching"),
+        )
+        db.session.add(prop)
+        db.session.flush()
+        PropertyService.analyze(prop)
+        db.session.commit()
+        ActivityService.log(
+            user_id=user_id,
+            message=f"Property added: {prop.address} ({prop.zip_code})",
+            level="info",
+        )
+        return prop
 
-        enriched = PropertyService._enrich_from_address(address)
-        zip_code = str(data.get("zip_code") or enriched.get("zip_code") or "").strip()
+    @staticmethod
+    def analyze(prop: Property) -> Property:
+        """Run the internal AVM and persist valuation fields."""
+        result = PropertyService._run_internal_avm(
+            {
+                "address": prop.address,
+                "zip_code": prop.zip_code,
+                "city": prop.city,
+                "state": prop.state,
+                "property_type": prop.property_type,
+                "bedrooms": prop.bedrooms,
+                "bathrooms": prop.bathrooms,
+                "lot_size_sqft": prop.lot_size_sqft,
+                "latitude": prop.latitude,
+                "longitude": prop.longitude,
+                "year_built": prop.year_built,
+                "listing_price": prop.listing_price,
+                "sqft": prop.sqft,
+            },
+            property_id=prop.id,
+        )
+
+        prop.area_avg_price = _to_decimal(result.get("area_avg_price"))
+        prop.area_avg_price_sqft = _to_decimal(result.get("area_avg_price_sqft"))
+        prop.estimated_value = _to_decimal(result.get("estimated_value"))
+        prop.estimated_rent = _to_decimal(result.get("estimated_rent"))
+        prop.monthly_mortgage_est = _to_decimal(result.get("monthly_mortgage_est"))
+        prop.price_deviation_pct = _to_decimal(result.get("price_deviation_pct"))
+        prop.deal_verdict = result.get("deal_verdict")
+        prop.deal_score = _to_decimal(result.get("deal_score"))
+        prop.cap_rate_pct = _to_decimal(result.get("cap_rate_pct"))
+        prop.roi_estimate_pct = _to_decimal(result.get("roi_estimate_pct"))
+        prop.last_analyzed_at = datetime.utcnow()
+        return prop
+
+    @staticmethod
+    def _run_internal_avm(subject: dict, property_id: Optional[str] = None, extra_comps: Optional[list] = None) -> dict:
+        zip_code = str(subject.get("zip_code") or "").strip()
         if not zip_code:
-            raise ValueError("Could not infer zip_code. Add zip_code in advanced inputs.")
+            raise ValueError("zip_code required")
 
-        city = data.get("city") or enriched.get("city")
-        state = data.get("state") or enriched.get("state")
-        bedrooms = _to_int(data.get("bedrooms") or enriched.get("bedrooms"))
-        bathrooms = _to_decimal(data.get("bathrooms") or enriched.get("bathrooms"))
-        lot_size_sqft = _to_int(data.get("lot_size_sqft") or enriched.get("lot_size_sqft"))
-        year_built = _to_int(data.get("year_built") or enriched.get("year_built"))
+        property_type = subject.get("property_type") or "single_family"
+        listing_price = _to_decimal(subject.get("listing_price"))
+        sqft = _to_int(subject.get("sqft"))
+        bedrooms = _to_int(subject.get("bedrooms"))
+        bathrooms = _to_decimal(subject.get("bathrooms"))
+        latitude = _to_decimal(subject.get("latitude"))
+        longitude = _to_decimal(subject.get("longitude"))
+        year_built = _to_int(subject.get("year_built"))
 
-        if not sqft and enriched.get("sqft"):
-            sqft = _to_int(enriched.get("sqft"))
-        if not data.get("property_type") and enriched.get("property_type"):
-            property_type = enriched.get("property_type")
-        if listing_price is None and enriched.get("listing_price") is not None:
-            listing_price = _to_decimal(enriched.get("listing_price"))
+        down_payment_pct = _to_decimal(subject.get("down_payment_pct")) or Decimal("20")
+        interest_rate_pct = _to_decimal(subject.get("interest_rate_pct")) or Decimal("7")
+        loan_years = _to_int(subject.get("loan_years")) or 30
+        expense_ratio_pct = _to_decimal(subject.get("expense_ratio_pct")) or Decimal("35")
 
-        target_roi_pct = _to_decimal(data.get("target_roi_pct"))
-        rehab_estimate = _to_decimal(data.get("rehab_estimate"))
-        down_payment_pct = _to_decimal(data.get("down_payment_pct")) or Decimal("20")
-        interest_rate_pct = _to_decimal(data.get("interest_rate_pct")) or Decimal("7")
-        loan_years = _to_int(data.get("loan_years")) or 30
-        expense_ratio_pct = _to_decimal(data.get("expense_ratio_pct")) or Decimal("35")
+        calibration = AVMCalibrationService.get_for_market(
+            zip_code=zip_code,
+            city=subject.get("city"),
+            state=subject.get("state"),
+            property_type=property_type,
+        )
 
         comps = PropertyService._fetch_market_snapshot(
             zip_code=zip_code,
             property_type=property_type,
-            property_id=None,
+            property_id=property_id,
         )
+        comps.extend(PropertyService._normalize_comp_inputs(extra_comps or [], property_type=property_type))
+
+        for comp in comps:
+            if comp.get("distance_miles") is None:
+                comp_lat = _to_decimal(comp.get("latitude"))
+                comp_lng = _to_decimal(comp.get("longitude"))
+                dist = PropertyService._distance_miles(
+                    subject_lat=latitude,
+                    subject_lng=longitude,
+                    comp_lat=comp_lat,
+                    comp_lng=comp_lng,
+                )
+                if dist is not None:
+                    comp["distance_miles"] = dist
+
+        weighted = PropertyService._weighted_comp_estimate(
+            subject={
+                "property_type": property_type,
+                "sqft": sqft,
+                "bedrooms": bedrooms,
+                "bathrooms": bathrooms,
+                "year_built": year_built,
+                "latitude": latitude,
+                "longitude": longitude,
+            },
+            comps=comps,
+            calibration=calibration,
+        )
+
         area_avg, area_avg_sqft = PropertyService._compute_area_avg_from_dicts(comps)
-
-        estimated_value = None
-        if sqft and area_avg_sqft:
+        estimated_value = weighted.get("estimated_value")
+        if estimated_value is None and sqft and area_avg_sqft:
             estimated_value = (Decimal(str(sqft)) * area_avg_sqft).quantize(Decimal("0.01"))
-        elif area_avg:
-            estimated_value = area_avg
-        elif listing_price:
-            estimated_value = listing_price
+        if estimated_value is None:
+            estimated_value = area_avg or listing_price
 
-        estimated_rent = (estimated_value * Decimal("0.008")).quantize(Decimal("0.01")) if estimated_value else None
+        rent_yield = weighted.get("rent_yield") or PropertyService._rent_yield_for_type(property_type)
+        estimated_rent = None
+        if estimated_value:
+            estimated_rent = (estimated_value * rent_yield).quantize(Decimal("0.01"))
+
         purchase_price = listing_price or estimated_value
         monthly_mortgage_est = PropertyService._estimate_mortgage(
             purchase_price,
@@ -81,8 +198,8 @@ class PropertyService:
             annual_rate_pct=interest_rate_pct,
             years=loan_years,
         )
-
         monthly_tax_est = PropertyService._estimate_property_tax(purchase_price)
+
         monthly_expense_est = None
         monthly_cash_flow_est = None
         if estimated_rent:
@@ -94,8 +211,9 @@ class PropertyService:
         price_deviation_pct = None
         deal_verdict = "unknown"
         deal_score = None
-        if listing_price and area_avg and area_avg > 0:
-            deviation = ((listing_price - area_avg) / area_avg * 100).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        benchmark = weighted.get("weighted_avg_price") or area_avg
+        if listing_price and benchmark and benchmark > 0:
+            deviation = ((listing_price - benchmark) / benchmark * 100).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
             price_deviation_pct = deviation
             if deviation <= PropertyService.DEAL_THRESHOLD_PCT:
                 deal_verdict = "good_deal"
@@ -104,7 +222,8 @@ class PropertyService:
             else:
                 deal_verdict = "overpriced"
             raw_score = max(Decimal("0"), Decimal("100") - (deviation + PropertyService.DEAL_THRESHOLD_PCT) * 2)
-            deal_score = min(raw_score, Decimal("100")).quantize(Decimal("0.01"))
+            comp_boost = min(Decimal(str(len(comps))), Decimal("10"))
+            deal_score = min(raw_score + comp_boost, Decimal("100")).quantize(Decimal("0.01"))
 
         cap_rate_pct = None
         roi_estimate_pct = None
@@ -112,7 +231,7 @@ class PropertyService:
             annual_rent = estimated_rent * 12
             expenses_est = annual_rent * (expense_ratio_pct / Decimal("100"))
             noi = annual_rent - expenses_est
-            if purchase_price and purchase_price > 0:
+            if purchase_price > 0:
                 cap_rate_pct = (noi / purchase_price * 100).quantize(Decimal("0.0001"))
                 annual_net = noi - (monthly_mortgage_est or 0) * 12
                 roi_estimate_pct = (annual_net / purchase_price * 100).quantize(Decimal("0.0001"))
@@ -121,8 +240,9 @@ class PropertyService:
             comps_count=len(comps),
             has_sqft=bool(sqft),
             has_listing=bool(listing_price),
-            has_city_state=bool(city and state),
+            has_city_state=bool(subject.get("city") and subject.get("state")),
         )
+        confidence_score = max(1, min(99, confidence_score + int(weighted.get("confidence_boost", 0))))
         confidence_label = PropertyService._confidence_label(confidence_score)
 
         neighborhood_trend = PropertyService._neighborhood_trend(price_deviation_pct, comps_count=len(comps))
@@ -136,14 +256,16 @@ class PropertyService:
             opportunity_classification = "avoid"
 
         return {
-            "address": address,
+            "address": subject.get("address"),
             "zip_code": zip_code,
-            "city": city,
-            "state": state,
+            "city": subject.get("city"),
+            "state": subject.get("state"),
+            "latitude": str(latitude) if latitude is not None else None,
+            "longitude": str(longitude) if longitude is not None else None,
             "property_type": property_type,
             "bedrooms": bedrooms,
             "bathrooms": str(bathrooms) if bathrooms is not None else None,
-            "lot_size_sqft": lot_size_sqft,
+            "lot_size_sqft": subject.get("lot_size_sqft"),
             "year_built": year_built,
             "listing_price": str(listing_price) if listing_price is not None else None,
             "sqft": sqft,
@@ -166,84 +288,241 @@ class PropertyService:
             "appreciation_trend": appreciation_trend,
             "risk_level": risk_level,
             "opportunity_classification": opportunity_classification,
-            "target_roi_pct": str(target_roi_pct) if target_roi_pct is not None else None,
-            "rehab_estimate": str(rehab_estimate) if rehab_estimate is not None else None,
+            "target_roi_pct": str(subject.get("target_roi_pct")) if subject.get("target_roi_pct") is not None else None,
+            "rehab_estimate": str(subject.get("rehab_estimate")) if subject.get("rehab_estimate") is not None else None,
             "comps_used": len(comps),
             "comps": comps[:8],
+            "avm_details": {
+                "weighted_avg_price": str(weighted.get("weighted_avg_price")) if weighted.get("weighted_avg_price") is not None else None,
+                "weighted_avg_ppsf": str(weighted.get("weighted_avg_ppsf")) if weighted.get("weighted_avg_ppsf") is not None else None,
+                "rent_yield_used": str(rent_yield),
+                "similarity_average": weighted.get("similarity_average"),
+                "market_calibration": calibration,
+                "feature_adjustments": weighted.get("feature_adjustments") or {},
+                "top_comps": weighted.get("top_comps") or [],
+            },
         }
 
     @staticmethod
-    def add_property(user_id: str, data: dict) -> Property:
-        normalized = PropertyService._normalize_property_inputs(data)
-        prop = Property(
-            user_id=user_id,
-            address=normalized["address"],
-            city=normalized.get("city"),
-            state=normalized.get("state"),
-            zip_code=normalized["zip_code"],
-            property_type=normalized.get("property_type", "single_family"),
-            bedrooms=normalized.get("bedrooms"),
-            bathrooms=normalized.get("bathrooms"),
-            sqft=normalized.get("sqft"),
-            lot_size_sqft=normalized.get("lot_size_sqft"),
-            year_built=normalized.get("year_built"),
-            listing_price=normalized.get("listing_price"),
-            notes=normalized.get("notes"),
-            source=normalized.get("source", "manual"),
-            status=normalized.get("status", "watching"),
-        )
-        db.session.add(prop)
-        db.session.flush()
-        PropertyService.analyze(prop)
-        db.session.commit()
-        ActivityService.log(
-            user_id=user_id,
-            message=f"Property added: {prop.address} ({prop.zip_code})",
-            level="info",
-        )
-        return prop
+    def _weighted_comp_estimate(subject: dict, comps: list[dict], calibration: Optional[dict] = None) -> dict:
+        weighted_price = Decimal("0")
+        weighted_ppsf = Decimal("0")
+        weighted_rent_yield = Decimal("0")
+        weight_sum = Decimal("0")
+        sim_sum = Decimal("0")
+        sim_count = 0
+        feature_totals = {
+            "type": Decimal("0"),
+            "size": Decimal("0"),
+            "beds": Decimal("0"),
+            "baths": Decimal("0"),
+            "year": Decimal("0"),
+            "geo": Decimal("0"),
+        }
+        ranked_comps = []
+
+        for comp in comps:
+            comp_price = _to_decimal(comp.get("sale_price"))
+            if comp_price is None or comp_price <= 0:
+                continue
+
+            similarity, components = PropertyService._comp_similarity(subject, comp, calibration=calibration)
+            if similarity <= 0:
+                continue
+
+            comp_ppsf = _to_decimal(comp.get("price_per_sqft"))
+
+            weight = Decimal(str(similarity))
+            weighted_price += comp_price * weight
+            weight_sum += weight
+            sim_sum += Decimal(str(similarity))
+            sim_count += 1
+
+            for key in feature_totals:
+                feature_totals[key] += Decimal(str(components.get(key, 0.0)))
+
+            ranked_comps.append(
+                {
+                    "address": comp.get("address"),
+                    "sale_price": str(comp_price),
+                    "sqft": comp.get("sqft"),
+                    "bedrooms": comp.get("bedrooms"),
+                    "bathrooms": str(comp.get("bathrooms")) if comp.get("bathrooms") is not None else None,
+                    "price_per_sqft": str(comp_ppsf) if comp_ppsf is not None else None,
+                    "distance_miles": str(comp.get("distance_miles")) if comp.get("distance_miles") is not None else None,
+                    "source": comp.get("source"),
+                    "similarity": round(float(similarity), 4),
+                    "feature_adjustments": components,
+                }
+            )
+
+            if comp_ppsf is not None and comp_ppsf > 0:
+                weighted_ppsf += comp_ppsf * weight
+
+            comp_type = comp.get("property_type") or subject.get("property_type")
+            weighted_rent_yield += PropertyService._rent_yield_for_type(comp_type) * weight
+
+        if weight_sum <= 0:
+            return {
+                "estimated_value": None,
+                "weighted_avg_price": None,
+                "weighted_avg_ppsf": None,
+                "rent_yield": None,
+                "similarity_average": None,
+                "confidence_boost": 0,
+                "feature_adjustments": {},
+                "top_comps": [],
+            }
+
+        weighted_avg_price = (weighted_price / weight_sum).quantize(Decimal("0.01"))
+        weighted_avg_ppsf = (weighted_ppsf / weight_sum).quantize(Decimal("0.01")) if weighted_ppsf > 0 else None
+        estimated_value = weighted_avg_price
+
+        subject_sqft = _to_int(subject.get("sqft"))
+        if subject_sqft and weighted_avg_ppsf:
+            estimated_value = (Decimal(str(subject_sqft)) * weighted_avg_ppsf).quantize(Decimal("0.01"))
+
+        avg_similarity = float((sim_sum / Decimal(str(sim_count))).quantize(Decimal("0.0001"))) if sim_count else None
+        rent_yield = (weighted_rent_yield / weight_sum).quantize(Decimal("0.0001")) if weighted_rent_yield > 0 else None
+        confidence_boost = min(10, int((avg_similarity or 0) * 12)) if avg_similarity is not None else 0
+        feature_adjustments = {}
+        if sim_count:
+            feature_adjustments = {
+                key: float((total / Decimal(str(sim_count))).quantize(Decimal("0.0001")))
+                for key, total in feature_totals.items()
+            }
+
+        ranked_comps.sort(key=lambda c: c.get("similarity", 0), reverse=True)
+
+        return {
+            "estimated_value": estimated_value,
+            "weighted_avg_price": weighted_avg_price,
+            "weighted_avg_ppsf": weighted_avg_ppsf,
+            "rent_yield": rent_yield,
+            "similarity_average": avg_similarity,
+            "confidence_boost": confidence_boost,
+            "feature_adjustments": feature_adjustments,
+            "top_comps": ranked_comps[:5],
+        }
 
     @staticmethod
-    def analyze(prop: Property) -> Property:
-        """Fetch comps (external + DB), run valuation, update deal score."""
-        comps = PropertyService._fetch_comps(prop)
-        area_avg, area_avg_sqft = PropertyService._compute_area_avg(prop, comps)
+    def _comp_similarity(subject: dict, comp: dict, calibration: Optional[dict] = None) -> tuple[float, dict]:
+        calibration = calibration or AVMCalibrationService.get_default()
+        weights = calibration.get("weights") or {}
+        bounds = calibration.get("bounds") or {}
 
-        prop.area_avg_price = area_avg
-        prop.area_avg_price_sqft = area_avg_sqft
-        prop.estimated_value = PropertyService._estimate_value(prop, area_avg, area_avg_sqft)
-        prop.estimated_rent = PropertyService._estimate_rent(prop)
-        prop.monthly_mortgage_est = PropertyService._estimate_mortgage(prop.listing_price)
-        prop.last_analyzed_at = datetime.utcnow()
+        similarity = 1.0
+        components = {
+            "type": 0.0,
+            "size": 0.0,
+            "beds": 0.0,
+            "baths": 0.0,
+            "year": 0.0,
+            "geo": 0.0,
+        }
 
-        if prop.listing_price and area_avg and area_avg > 0:
-            deviation = ((prop.listing_price - area_avg) / area_avg * 100).quantize(
-                Decimal("0.0001"), rounding=ROUND_HALF_UP
-            )
-            prop.price_deviation_pct = deviation
-            if deviation <= PropertyService.DEAL_THRESHOLD_PCT:
-                prop.deal_verdict = "good_deal"
-            elif deviation <= Decimal("15"):
-                prop.deal_verdict = "fair"
+        subject_type = (subject.get("property_type") or "").strip().lower()
+        comp_type = (comp.get("property_type") or subject_type).strip().lower()
+        if subject_type and comp_type:
+            if subject_type == comp_type:
+                delta = float(weights.get("type_match_bonus", 0.35))
+                similarity += delta
+                components["type"] += delta
+            elif {subject_type, comp_type} <= {"single_family", "multi_family"}:
+                delta = float(weights.get("type_related_bonus", 0.15))
+                similarity += delta
+                components["type"] += delta
             else:
-                prop.deal_verdict = "overpriced"
-            # Score: 100 = perfect deal (at or below avg), decreases linearly
-            raw_score = max(Decimal("0"), Decimal("100") - (deviation + PropertyService.DEAL_THRESHOLD_PCT) * 2)
-            prop.deal_score = min(raw_score, Decimal("100")).quantize(Decimal("0.01"))
-        else:
-            prop.deal_verdict = "unknown"
-            prop.deal_score = None
+                delta = float(weights.get("type_mismatch_penalty", 0.20))
+                similarity -= delta
+                components["type"] -= delta
 
-        # ROI / Cap Rate estimation
-        if prop.listing_price and prop.listing_price > 0 and prop.estimated_rent:
-            annual_rent = prop.estimated_rent * 12
-            expenses_est = annual_rent * Decimal("0.35")  # 35% expense ratio estimate
-            noi = annual_rent - expenses_est
-            prop.cap_rate_pct = (noi / prop.listing_price * 100).quantize(Decimal("0.0001"))
-            annual_net = noi - (prop.monthly_mortgage_est or 0) * 12
-            prop.roi_estimate_pct = (annual_net / prop.listing_price * 100).quantize(Decimal("0.0001"))
+        subject_sqft = _to_int(subject.get("sqft"))
+        comp_sqft = _to_int(comp.get("sqft"))
+        if subject_sqft and comp_sqft and comp_sqft > 0:
+            diff_pct = abs(subject_sqft - comp_sqft) / max(subject_sqft, 1)
+            size_floor = float(bounds.get("sqft_floor", 0.55))
+            size_weight = float(weights.get("sqft_weight", 0.70))
+            factor = max(size_floor, 1 - diff_pct * size_weight)
+            similarity *= factor
+            components["size"] = factor - 1
 
-        return prop
+        subject_beds = _to_int(subject.get("bedrooms"))
+        comp_beds = _to_int(comp.get("bedrooms"))
+        if subject_beds is not None and comp_beds is not None:
+            bed_diff = abs(subject_beds - comp_beds)
+            bed_floor = float(bounds.get("bed_floor", 0.70))
+            bed_weight = float(weights.get("bed_weight", 0.08))
+            factor = max(bed_floor, 1 - bed_diff * bed_weight)
+            similarity *= factor
+            components["beds"] = factor - 1
+
+        subject_baths = _to_decimal(subject.get("bathrooms"))
+        comp_baths = _to_decimal(comp.get("bathrooms"))
+        if subject_baths is not None and comp_baths is not None:
+            bath_diff = abs(float(subject_baths - comp_baths))
+            bath_floor = float(bounds.get("bath_floor", 0.75))
+            bath_weight = float(weights.get("bath_weight", 0.06))
+            factor = max(bath_floor, 1 - bath_diff * bath_weight)
+            similarity *= factor
+            components["baths"] = factor - 1
+
+        subject_year = _to_int(subject.get("year_built"))
+        comp_year = _to_int(comp.get("year_built"))
+        if subject_year and comp_year:
+            year_diff = abs(subject_year - comp_year)
+            year_floor = float(bounds.get("year_floor", 0.75))
+            year_weight = float(weights.get("year_weight", 1 / 240))
+            factor = max(year_floor, 1 - min(year_diff, 80) * year_weight)
+            similarity *= factor
+            components["year"] = factor - 1
+
+        distance = _to_decimal(comp.get("distance_miles"))
+        if distance is None:
+            distance = PropertyService._distance_miles(
+                subject_lat=_to_decimal(subject.get("latitude")),
+                subject_lng=_to_decimal(subject.get("longitude")),
+                comp_lat=_to_decimal(comp.get("latitude")),
+                comp_lng=_to_decimal(comp.get("longitude")),
+            )
+        if distance is not None:
+            d = float(distance)
+            if d <= 0.25:
+                delta = float(weights.get("distance_close_bonus_025", 0.25))
+                similarity += delta
+                components["geo"] += delta
+            elif d <= 0.5:
+                delta = float(weights.get("distance_close_bonus_05", 0.15))
+                similarity += delta
+                components["geo"] += delta
+            elif d <= 1.0:
+                delta = float(weights.get("distance_close_bonus_1", 0.05))
+                similarity += delta
+                components["geo"] += delta
+            elif d >= 3:
+                delta = float(weights.get("distance_far_penalty_3", 0.20))
+                similarity -= delta
+                components["geo"] -= delta
+
+            geo_decay = float(weights.get("distance_penalty_per_mile", 0.07))
+            distance_factor = max(0.60, 1 - d * geo_decay)
+            similarity *= distance_factor
+            components["geo"] += distance_factor - 1
+
+        similarity_min = float(bounds.get("similarity_min", 0.05))
+        similarity_max = float(bounds.get("similarity_max", 2.5))
+        return max(similarity_min, min(similarity, similarity_max)), components
+
+    @staticmethod
+    def _rent_yield_for_type(property_type: Optional[str]) -> Decimal:
+        mapping = {
+            "single_family": Decimal("0.0068"),
+            "condo": Decimal("0.0062"),
+            "multi_family": Decimal("0.0078"),
+            "land": Decimal("0.0000"),
+            "commercial": Decimal("0.0085"),
+        }
+        return mapping.get((property_type or "single_family").strip().lower(), Decimal("0.0068"))
 
     @staticmethod
     def _fetch_comps(prop: Property) -> list:
@@ -257,53 +536,37 @@ class PropertyService:
 
     @staticmethod
     def _fetch_market_snapshot(zip_code: str, property_type: str, property_id: Optional[str] = None) -> list:
-        """Fetch comparable sales for a zip code and optionally persist against a property."""
-        api_key = os.getenv("RAPIDAPI_KEY", "")
-        host = os.getenv("RAPIDAPI_HOST_ZILLOW", "zillow-com1.p.rapidapi.com")
+        """Build comparable sales list from internal data sources only."""
         comps = []
-        if api_key:
-            try:
-                url = f"https://{host}/propertyExtendedSearch"
-                params = {
-                    "location": zip_code,
-                    "home_type": _map_property_type(property_type),
-                    "status_type": "RecentlySold",
-                    "sort": "Newest",
-                }
-                resp = requests.get(
-                    url,
-                    headers={"X-RapidAPI-Key": api_key, "X-RapidAPI-Host": host},
-                    params=params,
-                    timeout=10,
-                )
-                if resp.ok:
-                    results = resp.json().get("props") or []
-                    for r in results[:20]:
-                        price = r.get("price") or r.get("lastSoldPrice")
-                        sqft = r.get("livingArea")
-                        if not price:
-                            continue
-                        price_dec = Decimal(str(price))
-                        pps = (price_dec / Decimal(str(sqft))).quantize(Decimal("0.01")) if sqft else None
-                        comp_data = {
-                            "address": r.get("address", ""),
-                            "sale_price": price_dec,
-                            "sqft": sqft,
-                            "bedrooms": r.get("bedrooms"),
-                            "bathrooms": r.get("bathrooms"),
-                            "price_per_sqft": pps,
-                            "sale_date": date.today(),
-                            "source": "zillow_rapidapi",
-                        }
-                        comps.append(comp_data)
 
-                        if property_id:
-                            comp = PropertyComp(property_id=property_id, **comp_data)
-                            db.session.add(comp)
-                    if property_id and comps:
-                        db.session.flush()
-            except Exception:
-                pass
+        db_comps_by_zip = (
+            db.session.query(PropertyComp)
+            .join(Property, Property.id == PropertyComp.property_id)
+            .filter(Property.zip_code == zip_code)
+            .order_by(PropertyComp.sale_date.desc(), PropertyComp.created_at.desc())
+            .limit(120)
+            .all()
+        )
+        for comp in db_comps_by_zip:
+            if property_id and comp.property_id == property_id:
+                continue
+            comps.append(
+                {
+                    "address": comp.address,
+                    "sale_price": comp.sale_price,
+                    "sqft": comp.sqft,
+                    "bedrooms": comp.bedrooms,
+                    "bathrooms": comp.bathrooms,
+                    "price_per_sqft": comp.price_per_sqft,
+                    "sale_date": comp.sale_date,
+                    "distance_miles": comp.distance_miles,
+                    "latitude": comp.latitude,
+                    "longitude": comp.longitude,
+                    "property_type": property_type,
+                    "year_built": None,
+                    "source": comp.source or "internal_comp",
+                }
+            )
 
         if property_id:
             db_comps = PropertyComp.query.filter_by(property_id=property_id).all()
@@ -317,34 +580,48 @@ class PropertyService:
                         "bathrooms": c.bathrooms,
                         "price_per_sqft": c.price_per_sqft,
                         "sale_date": c.sale_date,
+                        "distance_miles": c.distance_miles,
+                        "latitude": c.latitude,
+                        "longitude": c.longitude,
+                        "property_type": property_type,
+                        "year_built": None,
                         "source": c.source,
                     }
                     for c in db_comps
                 ]
 
-        # Fallback to local comps in same zip when external API is unavailable.
-        if not comps:
-            local_props = Property.query.filter_by(zip_code=zip_code).order_by(Property.created_at.desc()).limit(25).all()
-            for lp in local_props:
-                baseline = lp.estimated_value or lp.listing_price
-                if not baseline:
+        # Fallback to local properties in the same zip as synthetic comps.
+        local_props = Property.query.filter_by(zip_code=zip_code).order_by(Property.last_analyzed_at.desc(), Property.created_at.desc()).limit(80).all()
+        for lp in local_props:
+            baseline = lp.estimated_value or lp.listing_price
+            if not baseline:
+                continue
+            if property_type and lp.property_type and lp.property_type != property_type:
+                # Keep small share of off-type comps for sparse markets.
+                if len(comps) >= 20:
                     continue
-                pps = None
-                if lp.sqft and lp.sqft > 0:
-                    pps = (Decimal(str(baseline)) / Decimal(str(lp.sqft))).quantize(Decimal("0.01"))
-                comps.append(
-                    {
-                        "address": lp.address,
-                        "sale_price": Decimal(str(baseline)),
-                        "sqft": lp.sqft,
-                        "bedrooms": lp.bedrooms,
-                        "bathrooms": lp.bathrooms,
-                        "price_per_sqft": pps,
-                        "sale_date": date.today(),
-                        "source": "internal_zip_fallback",
-                    }
-                )
-        return comps
+            pps = None
+            if lp.sqft and lp.sqft > 0:
+                pps = (Decimal(str(baseline)) / Decimal(str(lp.sqft))).quantize(Decimal("0.01"))
+            comps.append(
+                {
+                    "address": lp.address,
+                    "sale_price": Decimal(str(baseline)),
+                    "sqft": lp.sqft,
+                    "bedrooms": lp.bedrooms,
+                    "bathrooms": lp.bathrooms,
+                    "price_per_sqft": pps,
+                    "sale_date": date.today(),
+                    "distance_miles": None,
+                    "latitude": lp.latitude,
+                    "longitude": lp.longitude,
+                    "property_type": lp.property_type,
+                    "year_built": lp.year_built,
+                    "source": "internal_zip_fallback",
+                }
+            )
+
+        return comps[:120]
 
     @staticmethod
     def _compute_area_avg_from_dicts(comps: list):
@@ -378,11 +655,11 @@ class PropertyService:
 
     @staticmethod
     def _estimate_rent(prop: Property) -> Optional[Decimal]:
-        """Rough rent estimate: 0.8% of estimated value per month."""
+        """Internal rent estimate based on property type monthly yield."""
         base = prop.estimated_value or prop.listing_price
         if not base:
             return None
-        return (base * Decimal("0.008")).quantize(Decimal("0.01"))
+        return (base * PropertyService._rent_yield_for_type(prop.property_type)).quantize(Decimal("0.01"))
 
     @staticmethod
     def _estimate_mortgage(price, down_payment_pct=Decimal("20"), annual_rate_pct=Decimal("7"), years=30) -> Optional[Decimal]:
@@ -416,65 +693,21 @@ class PropertyService:
 
     @staticmethod
     def _enrich_from_address(address: str) -> dict:
-        """Best-effort enrichment from external listing API based on address-like location."""
-        api_key = os.getenv("RAPIDAPI_KEY", "")
-        host = os.getenv("RAPIDAPI_HOST_ZILLOW", "zillow-com1.p.rapidapi.com")
-
+        """Local enrichment only. Parse zip from address and leave other fields unchanged."""
         fallback = {
             "zip_code": _extract_zip(address),
             "city": None,
             "state": None,
             "sqft": None,
             "lot_size_sqft": None,
+            "latitude": None,
+            "longitude": None,
             "year_built": None,
             "bedrooms": None,
             "bathrooms": None,
             "property_type": None,
             "listing_price": None,
         }
-
-        if not api_key:
-            return fallback
-
-        try:
-            url = f"https://{host}/propertyExtendedSearch"
-            resp = requests.get(
-                url,
-                headers={"X-RapidAPI-Key": api_key, "X-RapidAPI-Host": host},
-                params={"location": address, "status_type": "ForSale", "sort": "Newest"},
-                timeout=10,
-            )
-            if not resp.ok:
-                return fallback
-
-            props = resp.json().get("props") or []
-            if not props:
-                return fallback
-
-            best = props[0]
-            fallback.update(
-                {
-                    "zip_code": str(
-                        best.get("zipcode")
-                        or best.get("zipCode")
-                        or best.get("zip")
-                        or fallback.get("zip_code")
-                        or ""
-                    ).strip() or fallback.get("zip_code"),
-                    "city": best.get("city"),
-                    "state": best.get("state") or best.get("stateCode"),
-                    "sqft": best.get("livingArea"),
-                    "lot_size_sqft": best.get("lotAreaValue"),
-                    "year_built": best.get("yearBuilt"),
-                    "bedrooms": best.get("bedrooms"),
-                    "bathrooms": best.get("bathrooms"),
-                    "property_type": _normalize_property_type(best.get("homeType") or best.get("propertyType")),
-                    "listing_price": best.get("price"),
-                }
-            )
-        except Exception:
-            return fallback
-
         return fallback
 
     @staticmethod
@@ -498,6 +731,8 @@ class PropertyService:
             "bathrooms": _to_decimal(data.get("bathrooms") or enriched.get("bathrooms")),
             "sqft": _to_int(data.get("sqft") or enriched.get("sqft")),
             "lot_size_sqft": _to_int(data.get("lot_size_sqft") or enriched.get("lot_size_sqft")),
+            "latitude": _to_decimal(data.get("latitude") or enriched.get("latitude")),
+            "longitude": _to_decimal(data.get("longitude") or enriched.get("longitude")),
             "year_built": _to_int(data.get("year_built") or enriched.get("year_built")),
             "listing_price": _to_decimal(data.get("listing_price") or enriched.get("listing_price")),
             "notes": data.get("notes"),
@@ -505,6 +740,58 @@ class PropertyService:
             "status": data.get("status", "watching"),
         }
         return normalized
+
+    @staticmethod
+    def _normalize_comp_inputs(comps: list, property_type: str) -> list:
+        normalized = []
+        for comp in comps:
+            if not isinstance(comp, dict):
+                continue
+            sale_price = _to_decimal(comp.get("sale_price"))
+            if sale_price is None or sale_price <= 0:
+                continue
+
+            sqft = _to_int(comp.get("sqft"))
+            ppsf = _to_decimal(comp.get("price_per_sqft"))
+            if ppsf is None and sqft and sqft > 0:
+                ppsf = (sale_price / Decimal(str(sqft))).quantize(Decimal("0.01"))
+
+            normalized.append(
+                {
+                    "address": str(comp.get("address") or "").strip() or "Unknown comp",
+                    "sale_price": sale_price,
+                    "sqft": sqft,
+                    "bedrooms": _to_int(comp.get("bedrooms")),
+                    "bathrooms": _to_decimal(comp.get("bathrooms")),
+                    "price_per_sqft": ppsf,
+                    "sale_date": comp.get("sale_date") or date.today(),
+                    "distance_miles": _to_decimal(comp.get("distance_miles")),
+                    "latitude": _to_decimal(comp.get("latitude")),
+                    "longitude": _to_decimal(comp.get("longitude")),
+                    "property_type": comp.get("property_type") or property_type,
+                    "year_built": _to_int(comp.get("year_built")),
+                    "source": comp.get("source") or "scraped_comp",
+                }
+            )
+        return normalized
+
+    @staticmethod
+    def _distance_miles(subject_lat, subject_lng, comp_lat, comp_lng) -> Optional[Decimal]:
+        if subject_lat is None or subject_lng is None or comp_lat is None or comp_lng is None:
+            return None
+        try:
+            lat1 = math.radians(float(subject_lat))
+            lng1 = math.radians(float(subject_lng))
+            lat2 = math.radians(float(comp_lat))
+            lng2 = math.radians(float(comp_lng))
+
+            d_lat = lat2 - lat1
+            d_lng = lng2 - lng1
+            a = math.sin(d_lat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(d_lng / 2) ** 2
+            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+            return Decimal(str(3958.8 * c)).quantize(Decimal("0.01"))
+        except Exception:
+            return None
 
     @staticmethod
     def _confidence_score(comps_count: int, has_sqft: bool, has_listing: bool, has_city_state: bool) -> int:
@@ -557,17 +844,6 @@ class PropertyService:
         if confidence_score < 70:
             return "medium"
         return "low"
-
-
-def _map_property_type(ptype: str) -> str:
-    mapping = {
-        "single_family": "Houses",
-        "condo": "Apartments_Condos_Co-ops",
-        "multi_family": "Multi-family",
-        "land": "Lots-Land",
-        "commercial": "Apartments_Condos_Co-ops",
-    }
-    return mapping.get(ptype, "Houses")
 
 
 def _normalize_property_type(raw_type: Optional[str]) -> Optional[str]:

@@ -16,6 +16,17 @@ const ANALYSIS_STAGES = [
   "Scoring opportunity confidence...",
 ];
 
+const DEFAULT_CALIBRATION_FORM = {
+  type_match_bonus: "0.35",
+  type_related_bonus: "0.15",
+  type_mismatch_penalty: "0.20",
+  sqft_weight: "0.70",
+  bed_weight: "0.08",
+  bath_weight: "0.06",
+  year_weight: "0.0041667",
+  distance_penalty_per_mile: "0.07",
+};
+
 const verdictTone = {
   good_deal: "text-emerald-400",
   fair: "text-amber-300",
@@ -105,11 +116,15 @@ export default function PropertyPage() {
   const [loading, setLoading] = useState(true);
 
   const [analyzing, setAnalyzing] = useState(false);
+  const [scraping, setScraping] = useState(false);
+  const [savingCalibration, setSavingCalibration] = useState(false);
   const [stageMessage, setStageMessage] = useState(ANALYSIS_STAGES[0]);
   const stageTimerRef = useRef(null);
 
   const [analysis, setAnalysis] = useState(null);
+  const [calibrationForm, setCalibrationForm] = useState(DEFAULT_CALIBRATION_FORM);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showCalibration, setShowCalibration] = useState(false);
   const [analysisForm, setAnalysisForm] = useState({
     address: "",
     listing_price: "",
@@ -119,6 +134,8 @@ export default function PropertyPage() {
     city: "",
     state: "",
     lot_size_sqft: "",
+    latitude: "",
+    longitude: "",
     year_built: "",
     bedrooms: "",
     bathrooms: "",
@@ -245,6 +262,8 @@ export default function PropertyPage() {
       city: analysisForm.city || undefined,
       state: analysisForm.state || undefined,
       lot_size_sqft: numericOrNull(analysisForm.lot_size_sqft),
+      latitude: numericOrNull(analysisForm.latitude),
+      longitude: numericOrNull(analysisForm.longitude),
       year_built: numericOrNull(analysisForm.year_built),
       bedrooms: numericOrNull(analysisForm.bedrooms),
       bathrooms: numericOrNull(analysisForm.bathrooms),
@@ -262,6 +281,8 @@ export default function PropertyPage() {
         state: prev.state || estimate?.state || "",
         sqft: prev.sqft || (estimate?.sqft ? String(estimate.sqft) : ""),
         lot_size_sqft: prev.lot_size_sqft || (estimate?.lot_size_sqft ? String(estimate.lot_size_sqft) : ""),
+        latitude: prev.latitude || (estimate?.latitude ? String(estimate.latitude) : ""),
+        longitude: prev.longitude || (estimate?.longitude ? String(estimate.longitude) : ""),
         year_built: prev.year_built || (estimate?.year_built ? String(estimate.year_built) : ""),
         bedrooms: prev.bedrooms || (estimate?.bedrooms ? String(estimate.bedrooms) : ""),
         bathrooms: prev.bathrooms || (estimate?.bathrooms ? String(estimate.bathrooms) : ""),
@@ -272,6 +293,99 @@ export default function PropertyPage() {
     } finally {
       stopStageCycle();
       setAnalyzing(false);
+    }
+  };
+
+  const scrapeComps = async () => {
+    if (!analysisForm.address && !analysisForm.zip_code) {
+      setError("Enter an address or zip code before scraping comps.");
+      return;
+    }
+
+    setScraping(true);
+    setError("");
+    setNotice("");
+    try {
+      const payload = {
+        address: analysisForm.address,
+        zip_code: analysisForm.zip_code || undefined,
+        city: analysisForm.city || undefined,
+        state: analysisForm.state || undefined,
+        property_type: analysisForm.property_type,
+        listing_price: numericOrNull(analysisForm.listing_price),
+        sqft: numericOrNull(analysisForm.sqft),
+        bedrooms: numericOrNull(analysisForm.bedrooms),
+        bathrooms: numericOrNull(analysisForm.bathrooms),
+        year_built: numericOrNull(analysisForm.year_built),
+        latitude: numericOrNull(analysisForm.latitude),
+        longitude: numericOrNull(analysisForm.longitude),
+        max_results: 12,
+      };
+      const res = await api.post("/property/scrape-comps", payload);
+      const data = res.data?.data || {};
+      const nextEstimate = data.estimate || null;
+      if (nextEstimate) {
+        setAnalysis(nextEstimate);
+      }
+      setNotice(`Scraped ${data.scraped_count || 0} comps from Zillow/Realtor.`);
+    } catch (err) {
+      setError(err?.response?.data?.error || "Unable to scrape comps right now.");
+    } finally {
+      setScraping(false);
+    }
+  };
+
+  const loadCalibration = async () => {
+    setError("");
+    try {
+      const params = {
+        property_type: analysisForm.property_type,
+        zip_code: analysisForm.zip_code || undefined,
+        city: analysisForm.city || undefined,
+        state: analysisForm.state || undefined,
+      };
+      const res = await api.get("/property/avm-calibration", { params });
+      const weights = res.data?.data?.calibration?.weights || {};
+      setCalibrationForm((prev) => ({
+        ...prev,
+        ...Object.keys(prev).reduce((acc, key) => {
+          acc[key] = weights[key] !== undefined ? String(weights[key]) : prev[key];
+          return acc;
+        }, {}),
+      }));
+      setNotice("Loaded AVM market calibration for current property context.");
+    } catch (err) {
+      setError(err?.response?.data?.error || "Unable to load AVM calibration.");
+    }
+  };
+
+  const saveCalibration = async () => {
+    setSavingCalibration(true);
+    setError("");
+    try {
+      const calibration = {
+        weights: Object.keys(calibrationForm).reduce((acc, key) => {
+          const numeric = numericOrNull(calibrationForm[key]);
+          if (numeric !== null) {
+            acc[key] = numeric;
+          }
+          return acc;
+        }, {}),
+      };
+      await api.put("/property/avm-calibration", {
+        market: {
+          zip_code: analysisForm.zip_code || null,
+          city: analysisForm.city || null,
+          state: analysisForm.state || null,
+          property_type: analysisForm.property_type,
+        },
+        calibration,
+      });
+      setNotice("AVM calibration saved for current market.");
+    } catch (err) {
+      setError(err?.response?.data?.error || "Unable to save AVM calibration.");
+    } finally {
+      setSavingCalibration(false);
     }
   };
 
@@ -294,6 +408,8 @@ export default function PropertyPage() {
       bathrooms: numericOrNull(analysisForm.bathrooms) ?? numericOrNull(analysis.bathrooms),
       sqft: numericOrNull(analysisForm.sqft) ?? numericOrNull(analysis.sqft),
       lot_size_sqft: numericOrNull(analysisForm.lot_size_sqft) ?? numericOrNull(analysis.lot_size_sqft),
+      latitude: numericOrNull(analysisForm.latitude) ?? numericOrNull(analysis.latitude),
+      longitude: numericOrNull(analysisForm.longitude) ?? numericOrNull(analysis.longitude),
       year_built: numericOrNull(analysisForm.year_built) ?? numericOrNull(analysis.year_built),
       status: analysisForm.status,
       notes: analysisForm.notes,
@@ -478,7 +594,17 @@ export default function PropertyPage() {
             >
               Advanced Inputs {showAdvanced ? "▲" : "▼"}
             </button>
-            {analyzing ? <span className="text-xs font-mono text-cyan-300">{stageMessage}</span> : null}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={scraping}
+                onClick={scrapeComps}
+                className="h-8 px-3 rounded border border-cyan-500/35 bg-cyan-500/10 text-cyan-300 font-mono text-[11px] disabled:opacity-50"
+              >
+                {scraping ? "Scraping..." : "Scrape Zillow/Realtor"}
+              </button>
+              {analyzing ? <span className="text-xs font-mono text-cyan-300">{stageMessage}</span> : null}
+            </div>
           </div>
 
           {showAdvanced ? (
@@ -494,6 +620,8 @@ export default function PropertyPage() {
               </select>
               <input value={analysisForm.sqft} onChange={(e) => setAnalysisForm((p) => ({ ...p, sqft: e.target.value }))} placeholder="Sqft override" className="bg-black/30 border border-white/10 rounded px-2 py-2 font-mono text-xs text-white" />
               <input value={analysisForm.zip_code} onChange={(e) => setAnalysisForm((p) => ({ ...p, zip_code: e.target.value }))} placeholder="Zip override" className="bg-black/30 border border-white/10 rounded px-2 py-2 font-mono text-xs text-white" />
+              <input value={analysisForm.latitude} onChange={(e) => setAnalysisForm((p) => ({ ...p, latitude: e.target.value }))} placeholder="Latitude" className="bg-black/30 border border-white/10 rounded px-2 py-2 font-mono text-xs text-white" />
+              <input value={analysisForm.longitude} onChange={(e) => setAnalysisForm((p) => ({ ...p, longitude: e.target.value }))} placeholder="Longitude" className="bg-black/30 border border-white/10 rounded px-2 py-2 font-mono text-xs text-white" />
               <input value={analysisForm.lot_size_sqft} onChange={(e) => setAnalysisForm((p) => ({ ...p, lot_size_sqft: e.target.value }))} placeholder="Lot size" className="bg-black/30 border border-white/10 rounded px-2 py-2 font-mono text-xs text-white" />
               <input value={analysisForm.year_built} onChange={(e) => setAnalysisForm((p) => ({ ...p, year_built: e.target.value }))} placeholder="Year built" className="bg-black/30 border border-white/10 rounded px-2 py-2 font-mono text-xs text-white" />
               <input value={analysisForm.bedrooms} onChange={(e) => setAnalysisForm((p) => ({ ...p, bedrooms: e.target.value }))} placeholder="Bedrooms" className="bg-black/30 border border-white/10 rounded px-2 py-2 font-mono text-xs text-white" />
@@ -524,15 +652,60 @@ export default function PropertyPage() {
             <p className="font-mono text-[10px] tracking-[0.18em] text-slate-500 uppercase">Analysis Intelligence</p>
             <p className="font-mono text-xs text-slate-400 mt-1">Results-first deal diagnostics with automated enrichment and confidence scoring.</p>
           </div>
-          <button
-            type="button"
-            disabled={!analysis}
-            onClick={trackProperty}
-            className="px-3 py-1.5 rounded-lg border border-emerald-500/35 bg-emerald-500/10 text-emerald-300 font-mono text-xs disabled:opacity-40"
-          >
-            Track Property
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={loadCalibration}
+              className="px-3 py-1.5 rounded-lg border border-cyan-500/35 bg-cyan-500/10 text-cyan-300 font-mono text-xs"
+            >
+              Load Calibration
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCalibration((prev) => !prev)}
+              className="px-3 py-1.5 rounded-lg border border-white/20 bg-white/5 text-slate-200 font-mono text-xs"
+            >
+              {showCalibration ? "Hide" : "Tune"} AVM
+            </button>
+            <button
+              type="button"
+              disabled={!analysis}
+              onClick={trackProperty}
+              className="px-3 py-1.5 rounded-lg border border-emerald-500/35 bg-emerald-500/10 text-emerald-300 font-mono text-xs disabled:opacity-40"
+            >
+              Track Property
+            </button>
+          </div>
         </div>
+
+        {showCalibration ? (
+          <div className="mb-4 border border-cyan-500/20 rounded-xl p-3 bg-cyan-500/5">
+            <p className="font-mono text-[10px] tracking-[0.18em] text-cyan-200 uppercase">AVM Calibration</p>
+            <p className="font-mono text-xs text-cyan-100/70 mt-1">Tune feature weights per market for this property type and location context.</p>
+            <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2">
+              {Object.keys(calibrationForm).map((key) => (
+                <label key={key} className="flex flex-col gap-1">
+                  <span className="font-mono text-[10px] text-cyan-200 uppercase tracking-wider">{key.replace(/_/g, " ")}</span>
+                  <input
+                    value={calibrationForm[key]}
+                    onChange={(e) => setCalibrationForm((prev) => ({ ...prev, [key]: e.target.value }))}
+                    className="bg-black/30 border border-cyan-400/20 rounded px-2 py-2 font-mono text-xs text-white"
+                  />
+                </label>
+              ))}
+            </div>
+            <div className="mt-3 flex justify-end">
+              <button
+                type="button"
+                disabled={savingCalibration}
+                onClick={saveCalibration}
+                className="px-3 py-1.5 rounded-lg border border-cyan-500/40 bg-cyan-500/15 text-cyan-200 font-mono text-xs disabled:opacity-50"
+              >
+                {savingCalibration ? "Saving..." : "Save Calibration"}
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {!analysis ? (
           <div className="somb-empty-state">
@@ -579,21 +752,41 @@ export default function PropertyPage() {
                 <div><p className="font-mono text-[10px] text-slate-500 uppercase tracking-wider">Risk Level</p><p className="font-mono text-sm text-white">{String(analysis.risk_level || "unknown").toUpperCase()}</p></div>
                 <div><p className="font-mono text-[10px] text-slate-500 uppercase tracking-wider">Opportunity</p><p className="font-mono text-sm text-emerald-300">{String(analysis.opportunity_classification || "monitor").replace(/_/g, " ")}</p></div>
               </div>
+
+              <div className="mt-4 border border-white/10 rounded-xl p-3 bg-black/20">
+                <p className="font-mono text-[10px] tracking-[0.18em] text-slate-500 uppercase">AVM Explainability</p>
+                <div className="mt-2 grid grid-cols-2 md:grid-cols-3 gap-2">
+                  {Object.entries(analysis?.avm_details?.feature_adjustments || {}).length === 0 ? (
+                    <p className="col-span-full font-mono text-xs text-slate-500">Feature adjustments unavailable until comparable data is present.</p>
+                  ) : (
+                    Object.entries(analysis?.avm_details?.feature_adjustments || {}).map(([name, value]) => (
+                      <div key={name} className="rounded border border-white/10 px-2 py-1">
+                        <p className="font-mono text-[10px] text-slate-500 uppercase tracking-wider">{name}</p>
+                        <p className="font-mono text-sm text-white">{Number(value).toFixed(3)}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="border border-white/10 rounded-xl p-4 bg-black/20">
-              <p className="font-mono text-[10px] tracking-[0.18em] text-slate-500 uppercase">Comparable Sales</p>
+              <p className="font-mono text-[10px] tracking-[0.18em] text-slate-500 uppercase">Top Weighted Comps</p>
               <div className="mt-2 divide-y divide-white/5 max-h-[330px] overflow-y-auto">
-                {(analysis.comps || []).length === 0 ? (
+                {(analysis?.avm_details?.top_comps || analysis.comps || []).length === 0 ? (
                   <p className="font-mono text-xs text-slate-500 py-4">No comps found for current criteria.</p>
                 ) : (
-                  (analysis.comps || []).slice(0, 10).map((comp, index) => (
+                  (analysis?.avm_details?.top_comps || analysis.comps || []).slice(0, 5).map((comp, index) => (
                     <div key={`${comp.address}-${index}`} className="py-2 text-xs font-mono">
                       <p className="text-slate-300 truncate">{comp.address || "Unknown address"}</p>
                       <div className="flex items-center justify-between text-slate-500 mt-1">
                         <span>{formatMoney(comp.sale_price)}</span>
                         <span>{comp.sqft ? `${comp.sqft} sqft` : "-"}</span>
                         <span>{comp.price_per_sqft ? `${formatMoney(comp.price_per_sqft)}/sqft` : "-"}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] text-cyan-300/90 mt-1">
+                        <span>Similarity: {Number(comp.similarity || 0).toFixed(3)}</span>
+                        <span>{comp.distance_miles ? `${Number(comp.distance_miles).toFixed(2)} mi` : "distance n/a"}</span>
                       </div>
                     </div>
                   ))

@@ -85,6 +85,42 @@ def _ensure_booking_columns():
     db.session.commit()
 
 
+def _ensure_property_intel_columns():
+    from sqlalchemy import inspect, text
+
+    columns_by_table = {
+        "properties": {
+            "latitude": "NUMERIC(10, 7)",
+            "longitude": "NUMERIC(10, 7)",
+        },
+        "property_comps": {
+            "latitude": "NUMERIC(10, 7)",
+            "longitude": "NUMERIC(10, 7)",
+        },
+    }
+
+    inspector = inspect(db.engine)
+    table_names = set(inspector.get_table_names())
+    use_if_not_exists = db.engine.dialect.name != "sqlite"
+
+    for table_name, columns in columns_by_table.items():
+        if table_name not in table_names:
+            continue
+
+        existing_columns = {column["name"] for column in inspector.get_columns(table_name)}
+        statements = []
+        for name, ddl in columns.items():
+            if name in existing_columns:
+                continue
+            clause = f"ADD COLUMN IF NOT EXISTS {name} {ddl}" if use_if_not_exists else f"ADD COLUMN {name} {ddl}"
+            statements.append(f"ALTER TABLE {table_name} {clause}")
+
+        for statement in statements:
+            db.session.execute(text(statement))
+
+    db.session.commit()
+
+
 def create_app() -> Flask:
     app = Flask(__name__)
     app.config.from_object(Config)
@@ -121,6 +157,7 @@ def create_app() -> Flask:
         with _database_bootstrap_lock():
             db.create_all()
         _ensure_booking_columns()
+        _ensure_property_intel_columns()
         AuthService.bootstrap_roles()
         system_user = AuthService.bootstrap_system_user(
             username=app.config["SYSTEM_USERNAME"],
