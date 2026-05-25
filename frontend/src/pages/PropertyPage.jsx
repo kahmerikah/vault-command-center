@@ -264,11 +264,10 @@ export default function PropertyPage() {
     }
     addressDebounceRef.current = setTimeout(async () => {
       try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(value)}&format=json&limit=6&addressdetails=1&countrycodes=us`,
-          { headers: { "Accept-Language": "en-US,en;q=0.9" } }
-        );
-        const data = await res.json();
+        const res = await api.get("/property/address-suggestions", {
+          params: { q: value },
+        });
+        const data = res.data?.data?.items || [];
         setAddressSuggestions(data || []);
         setShowSuggestions((data || []).length > 0);
       } catch {

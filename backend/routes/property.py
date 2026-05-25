@@ -1,4 +1,8 @@
 """Property Intelligence routes."""
+import json
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+
 from flask import Blueprint, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from backend.extensions import db
@@ -49,6 +53,40 @@ def add_property():
     except ValueError as exc:
         return error_response(str(exc), 400)
     return success_response(_serialize(prop), 201)
+
+
+@property_bp.get("/address-suggestions")
+@jwt_required()
+def address_suggestions():
+    query = str(request.args.get("q") or "").strip()
+    if len(query) < 3:
+        return success_response({"items": []})
+
+    params = urlencode(
+        {
+            "q": query,
+            "format": "json",
+            "limit": 6,
+            "addressdetails": 1,
+            "countrycodes": "us",
+        }
+    )
+    nominatim_url = f"https://nominatim.openstreetmap.org/search?{params}"
+    req = Request(
+        nominatim_url,
+        headers={
+            "Accept-Language": "en-US,en;q=0.9",
+            "User-Agent": "SOMB-Vault/1.0 (property-autocomplete)",
+        },
+    )
+
+    try:
+        with urlopen(req, timeout=8) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        return error_response(f"address suggestions unavailable: {exc}", 502)
+
+    return success_response({"items": payload if isinstance(payload, list) else []})
 
 
 @property_bp.post("/estimate")
