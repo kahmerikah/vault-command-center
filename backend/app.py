@@ -46,6 +46,45 @@ def _database_bootstrap_lock():
                 fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
+def _ensure_booking_columns():
+    columns = {
+        "title": "VARCHAR(255)",
+        "event_type": "VARCHAR(64)",
+        "location": "VARCHAR(512)",
+        "description": "TEXT",
+        "attendees": "JSON",
+        "tags": "JSON",
+        "priority": "VARCHAR(16)",
+        "color": "VARCHAR(16)",
+        "is_public": "BOOLEAN NOT NULL DEFAULT FALSE",
+        "is_all_day": "BOOLEAN NOT NULL DEFAULT FALSE",
+        "recurrence_rule": "VARCHAR(256)",
+        "linked_module": "VARCHAR(64)",
+        "linked_entity_id": "VARCHAR(36)",
+    }
+
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(db.engine)
+    if "bookings" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("bookings")}
+    use_if_not_exists = db.engine.dialect.name != "sqlite"
+    statements = []
+    for name, ddl in columns.items():
+        if name in existing_columns:
+            continue
+        clause = f"ADD COLUMN IF NOT EXISTS {name} {ddl}" if use_if_not_exists else f"ADD COLUMN {name} {ddl}"
+        statements.append(f"ALTER TABLE bookings {clause}")
+    if not statements:
+        return
+
+    for statement in statements:
+        db.session.execute(text(statement))
+    db.session.commit()
+
+
 def create_app() -> Flask:
     app = Flask(__name__)
     app.config.from_object(Config)
@@ -81,6 +120,7 @@ def create_app() -> Flask:
         # Bootstrap in one place so fresh installs can run without a manual migration step.
         with _database_bootstrap_lock():
             db.create_all()
+        _ensure_booking_columns()
         AuthService.bootstrap_roles()
         system_user = AuthService.bootstrap_system_user(
             username=app.config["SYSTEM_USERNAME"],
