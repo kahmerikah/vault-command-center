@@ -121,6 +121,12 @@ export default function PropertyPage() {
   const [stageMessage, setStageMessage] = useState(ANALYSIS_STAGES[0]);
   const stageTimerRef = useRef(null);
 
+  // Address autocomplete
+  const [addressSuggestions, setAddressSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const addressDebounceRef = useRef(null);
+  const addressWrapperRef = useRef(null);
+
   const [analysis, setAnalysis] = useState(null);
   const [calibrationForm, setCalibrationForm] = useState(DEFAULT_CALIBRATION_FORM);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -237,6 +243,69 @@ export default function PropertyPage() {
       stageTimerRef.current = null;
     }
   };
+
+  // ── Address autocomplete (Nominatim / OpenStreetMap) ──────────────────
+  const fetchAddressSuggestions = (value) => {
+    clearTimeout(addressDebounceRef.current);
+    if (!value || value.trim().length < 3) {
+      setAddressSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    addressDebounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(value)}&format=json&limit=6&addressdetails=1&countrycodes=us`,
+          { headers: { "Accept-Language": "en-US,en;q=0.9" } }
+        );
+        const data = await res.json();
+        setAddressSuggestions(data || []);
+        setShowSuggestions((data || []).length > 0);
+      } catch {
+        setAddressSuggestions([]);
+        setShowSuggestions(false);
+      }
+    }, 320);
+  };
+
+  const selectAddressSuggestion = (item) => {
+    const addr = item.address || {};
+    const houseNumber = addr.house_number || "";
+    const road = addr.road || addr.pedestrian || addr.path || "";
+    const street = [houseNumber, road].filter(Boolean).join(" ").trim();
+    const city = addr.city || addr.town || addr.village || addr.suburb || "";
+    const state = addr.state || "";
+    const zip = addr.postcode || "";
+    const lat = item.lat || "";
+    const lon = item.lon || "";
+
+    const displayAddress = street
+      ? `${street}${city ? `, ${city}` : ""}${state ? `, ${state}` : ""}${zip ? ` ${zip}` : ""}`
+      : item.display_name;
+
+    setAnalysisForm((prev) => ({
+      ...prev,
+      address: displayAddress,
+      city: city || prev.city,
+      state: state || prev.state,
+      zip_code: zip || prev.zip_code,
+      latitude: lat || prev.latitude,
+      longitude: lon || prev.longitude,
+    }));
+    setAddressSuggestions([]);
+    setShowSuggestions(false);
+  };
+
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handler = (e) => {
+      if (addressWrapperRef.current && !addressWrapperRef.current.contains(e.target)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   const runAnalysis = async (event) => {
     event.preventDefault();
@@ -564,13 +633,35 @@ export default function PropertyPage() {
       <GlassPanel>
         <form onSubmit={runAnalysis} className="space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-[1fr_170px_auto] gap-2">
-            <input
-              value={analysisForm.address}
-              onChange={(e) => setAnalysisForm((prev) => ({ ...prev, address: e.target.value }))}
-              placeholder="Search property address"
-              className="h-11 bg-black/30 border border-white/10 rounded px-3 font-mono text-sm text-white outline-none focus:border-emerald-500/50"
-              required
-            />
+            {/* Address autocomplete */}
+            <div ref={addressWrapperRef} className="relative">
+              <input
+                value={analysisForm.address}
+                onChange={(e) => {
+                  setAnalysisForm((prev) => ({ ...prev, address: e.target.value }));
+                  fetchAddressSuggestions(e.target.value);
+                }}
+                onFocus={() => addressSuggestions.length > 0 && setShowSuggestions(true)}
+                placeholder="Search property address"
+                className="h-11 w-full bg-black/30 border border-white/10 rounded px-3 font-mono text-sm text-white outline-none focus:border-emerald-500/50"
+                required
+                autoComplete="off"
+              />
+              {showSuggestions && addressSuggestions.length > 0 && (
+                <ul className="absolute z-50 left-0 right-0 top-full mt-1 rounded-lg border border-white/15 bg-zinc-900 shadow-xl overflow-hidden max-h-60 overflow-y-auto">
+                  {addressSuggestions.map((item) => (
+                    <li
+                      key={item.place_id}
+                      onMouseDown={() => selectAddressSuggestion(item)}
+                      className="px-3 py-2 font-mono text-xs text-slate-300 hover:bg-emerald-600/25 hover:text-white cursor-pointer border-b border-white/5 last:border-0 truncate"
+                      title={item.display_name}
+                    >
+                      {item.display_name}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
             <input
               value={analysisForm.listing_price}
               onChange={(e) => setAnalysisForm((prev) => ({ ...prev, listing_price: e.target.value }))}
