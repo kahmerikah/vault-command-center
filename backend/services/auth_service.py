@@ -11,6 +11,18 @@ DEFAULT_ROLES = ["super_admin", "admin", "moderator", "seller", "member", "guest
 
 class AuthService:
     @staticmethod
+    def _serialize_user(user: User) -> dict:
+        role = user.role.name if user.role else "guest"
+        permissions = [permission.code for permission in user.role.permissions] if user.role else []
+        return {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "role": role,
+            "permissions": permissions,
+        }
+
+    @staticmethod
     def bootstrap_roles():
         for role_name in DEFAULT_ROLES:
             if not Role.query.filter_by(name=role_name).first():
@@ -131,8 +143,8 @@ class AuthService:
         if not user.is_active:
             raise ValueError("user is inactive")
 
-        permissions = [permission.code for permission in user.role.permissions]
-        claims = {"role": user.role.name, "username": user.username, "permissions": permissions}
+        serialized_user = AuthService._serialize_user(user)
+        claims = {"role": serialized_user["role"], "username": serialized_user["username"], "permissions": serialized_user["permissions"]}
         access = create_access_token(identity=user.id, additional_claims=claims)
         refresh = create_refresh_token(identity=user.id, additional_claims=claims)
 
@@ -145,7 +157,7 @@ class AuthService:
         db.session.add(session)
         db.session.commit()
 
-        return {"access_token": access, "refresh_token": refresh, "user": user}
+        return {"access_token": access, "refresh_token": refresh, "user": serialized_user}
 
     @staticmethod
     def refresh(user_id: str, refresh_jti: str):
@@ -157,8 +169,8 @@ class AuthService:
         if not session:
             raise ValueError("invalid session")
 
-        permissions = [permission.code for permission in user.role.permissions]
-        claims = {"role": user.role.name, "username": user.username, "permissions": permissions}
+        serialized_user = AuthService._serialize_user(user)
+        claims = {"role": serialized_user["role"], "username": serialized_user["username"], "permissions": serialized_user["permissions"]}
         new_access = create_access_token(identity=user.id, additional_claims=claims)
         new_refresh = create_refresh_token(identity=user.id, additional_claims=claims)
 
@@ -176,7 +188,7 @@ class AuthService:
         return {
             "access_token": new_access,
             "refresh_token": new_refresh,
-            "user": user,
+            "user": serialized_user,
         }
 
     @staticmethod

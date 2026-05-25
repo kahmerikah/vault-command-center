@@ -51,14 +51,14 @@ def login():
         return error_response(str(exc), 401)
 
     ActivityService.log(
-        message=f"Successful login: {payload['user'].username}",
-        actor_id=payload["user"].id,
+        message=f"Successful login: {payload['user']['username']}",
+        actor_id=payload["user"]["id"],
         meta={"ip": request.remote_addr or ""},
     )
 
     # Auto-index platform docs/patterns so Knowledge OS is ready without manual import clicks.
     try:
-        KnowledgeService.ensure_platform_knowledge(user_id=payload["user"].id)
+        KnowledgeService.ensure_platform_knowledge(user_id=payload["user"]["id"])
     except Exception:
         pass
 
@@ -67,10 +67,10 @@ def login():
             "access_token": payload["access_token"],
             "refresh_token": payload["refresh_token"],
             "user": {
-                "id": payload["user"].id,
-                "username": payload["user"].username,
-                "email": payload["user"].email,
-                "role": payload["user"].role.name,
+                "id": payload["user"]["id"],
+                "username": payload["user"]["username"],
+                "email": payload["user"]["email"],
+                "role": payload["user"]["role"],
             },
         }
     )
@@ -176,10 +176,10 @@ def refresh():
             "access_token": payload["access_token"],
             "refresh_token": payload["refresh_token"],
             "user": {
-                "id": payload["user"].id,
-                "username": payload["user"].username,
-                "email": payload["user"].email,
-                "role": payload["user"].role.name,
+                "id": payload["user"]["id"],
+                "username": payload["user"]["username"],
+                "email": payload["user"]["email"],
+                "role": payload["user"]["role"],
             },
         }
     )
