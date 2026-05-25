@@ -36,3 +36,16 @@ The SOMB Vault is the central reusable infrastructure layer for all SOMB product
 - Socket.IO for immediate live updates in dashboard and module events.
 - Celery + Redis for long-running and asynchronous workflows.
 - Local storage abstraction with cloud-ready extension point.
+
+## Layered Runtime (2026 Refactor)
+- Layer 1: SOMB Vault OS is the command center and orchestration UX layer.
+- Layer 2: SOMB Engine is the shared runtime (module registry, event bus, workflows, state persistence, telemetry, realtime).
+- Layer 3: Apps are modules/plugins mounted through manifests and shared services.
+
+## Shared Engine Systems
+- Auth and RBAC/permissions are centralized and tokenized with permission claims.
+- Event bus persists engine_events and broadcasts over websocket channels.
+- Workflow engine executes trigger-condition-action flows and persists workflow_runs.
+- Module registry auto-discovers manifests and registers permissions dynamically.
+- API gateway and request context inject unified runtime context and telemetry.
+- Health endpoints include engine telemetry and module runtime status.

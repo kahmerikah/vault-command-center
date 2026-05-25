@@ -1,9 +1,24 @@
 {
   "key": "ecommerce",
-  "name": "Ecommerce",
-  "description": "Product, checkout, and membership flows backed by Stripe.",
+  "name": "SOMB Ecommerce",
+  "description": "Commerce, checkout, and revenue workflows on top of the shared engine.",
+  "routes": ["/ecommerce"],
+  "api_prefix": "/api/v1/ecommerce",
   "route_prefix": "/api/v1/ecommerce",
   "is_enabled": true,
-  "permissions": ["ecommerce.read", "ecommerce.write"],
-  "websocket_events": ["ecommerce:order_updated"]
+  "permissions": ["ecommerce.read", "ecommerce.write", "ecommerce.refund"],
+  "events": ["payment.succeeded", "payment.refunded", "payment.disputed"],
+  "websocket_events": ["ecommerce:order_updated", "engine:event"],
+  "uses": ["auth", "payments", "wallets", "notifications", "workflows"],
+  "workflows": [
+    {
+      "key": "ecommerce.payment_settlement",
+      "name": "Payment Settlement",
+      "trigger": "payment.succeeded",
+      "actions": [
+        { "type": "log", "message": "Payment settlement workflow executed" },
+        { "type": "set_state", "key": "engine.ecommerce.last_payment", "value": "$payload" }
+      ]
+    }
+  ]
 }

@@ -1,9 +1,25 @@
 {
   "key": "booking",
-  "name": "Booking",
-  "description": "Appointment scheduling and availability management.",
+  "name": "SOMB Booking",
+  "description": "Appointment and scheduling module running on shared engine context.",
+  "routes": ["/booking"],
+  "api_prefix": "/api/v1/booking",
   "route_prefix": "/api/v1/booking",
   "is_enabled": true,
-  "permissions": ["booking.read", "booking.write"],
-  "websocket_events": ["booking:updated"]
+  "permissions": ["booking.read", "booking.write", "booking.admin"],
+  "events": ["booking.created", "booking.status_changed", "booking.cancelled"],
+  "websocket_events": ["booking:updated", "engine:event"],
+  "uses": ["auth", "notifications", "workflows", "realtime"],
+  "workflows": [
+    {
+      "key": "booking.confirmation_pipeline",
+      "name": "Booking Confirmation Pipeline",
+      "trigger": "booking.created",
+      "actions": [
+        { "type": "emit_event", "event": "notification.created", "payload": { "channel": "booking" } },
+        { "type": "log", "message": "Booking workflow executed" },
+        { "type": "set_state", "key": "engine.booking.last_created", "value": "$payload" }
+      ]
+    }
+  ]
 }

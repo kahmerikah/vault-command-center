@@ -1,9 +1,25 @@
 {
   "key": "arcade",
-  "name": "Arcade",
-  "description": "Arcade economy, leaderboards, and payouts.",
+  "name": "SOMB Arcade",
+  "description": "Arcade economy, leaderboards, and reward payouts on shared services.",
+  "routes": ["/arcade"],
+  "api_prefix": "/api/v1/arcade",
   "route_prefix": "/api/v1/arcade",
   "is_enabled": true,
-  "permissions": ["arcade.play", "arcade.admin"],
-  "websocket_events": ["arcade:leaderboard"]
+  "permissions": ["arcade.read", "arcade.play", "arcade.admin"],
+  "events": ["game.started", "game.finished", "reward.issued"],
+  "websocket_events": ["arcade:leaderboard", "engine:event"],
+  "uses": ["auth", "wallets", "payments", "notifications", "realtime"],
+  "workflows": [
+    {
+      "key": "arcade.reward_pipeline",
+      "name": "Arcade Reward Pipeline",
+      "trigger": "game.finished",
+      "actions": [
+        { "type": "emit_event", "event": "reward.issued" },
+        { "type": "log", "message": "Arcade rewards issued" },
+        { "type": "set_state", "key": "engine.arcade.last_reward", "value": "$payload" }
+      ]
+    }
+  ]
 }
