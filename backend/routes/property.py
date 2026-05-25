@@ -58,6 +58,19 @@ def estimate_property():
     if not data.get("address"):
         return error_response("address required", 400)
     try:
+        # Enrich with live Zillow data (Zestimate + property details) before running AVM.
+        # Failure is non-fatal — AVM proceeds with whatever data is available.
+        try:
+            subject_details = PropertyScraperService.scrape_subject_property(address=data["address"])
+            if subject_details:
+                for field in ("sqft", "bedrooms", "bathrooms", "year_built", "latitude", "longitude"):
+                    if not data.get(field) and subject_details.get(field) is not None:
+                        data[field] = subject_details[field]
+                if subject_details.get("zestimate"):
+                    data["zestimate"] = subject_details["zestimate"]
+        except Exception:
+            pass
+
         estimate = PropertyService.estimate_value(data)
         return success_response(estimate)
     except ValueError as exc:
@@ -123,6 +136,7 @@ def scrape_property_comps():
         "listing_price": data.get("listing_price") or (tracked_property.listing_price if tracked_property else None),
         "latitude": latitude or sd.get("latitude"),
         "longitude": longitude or sd.get("longitude"),
+        "zestimate": sd.get("zestimate"),
         "scraped_comps": comps,
     }
 

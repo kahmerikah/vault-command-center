@@ -921,6 +921,11 @@ export default function PropertyPage() {
                 <div>
                   <p className="font-mono text-[10px] text-slate-500 uppercase tracking-wider">Estimated Market Value</p>
                   <p className="font-mono text-lg text-white">{formatMoney(analysis.estimated_value)}</p>
+                  {analysis.zestimate && (
+                    <p className="font-mono text-[10px] text-slate-400 mt-0.5">
+                      Zestimate™ <span className="text-slate-300">{formatMoney(analysis.zestimate)}</span>
+                    </p>
+                  )}
                 </div>
                 <div>
                   <p className="font-mono text-[10px] text-slate-500 uppercase tracking-wider">Listing Price</p>

@@ -105,6 +105,7 @@ class PropertyService:
                 "year_built": normalized.get("year_built"),
                 "listing_price": normalized.get("listing_price"),
                 "sqft": normalized.get("sqft"),
+                "zestimate": _to_decimal(data.get("zestimate")),
                 "target_roi_pct": _to_decimal(data.get("target_roi_pct")),
                 "rehab_estimate": _to_decimal(data.get("rehab_estimate")),
                 "down_payment_pct": _to_decimal(data.get("down_payment_pct")) or Decimal("20"),
@@ -280,6 +281,13 @@ class PropertyService:
         if estimated_value is None:
             estimated_value = area_avg or listing_price
 
+        # If a Zillow Zestimate is available, use it as the authoritative estimated_value.
+        # The internal AVM still runs for deal scoring, benchmarking, and comp analysis,
+        # but the displayed value anchors to Zillow's machine-learned estimate.
+        zestimate_val = _to_decimal(subject.get("zestimate"))
+        if zestimate_val and zestimate_val > 0:
+            estimated_value = zestimate_val
+
         rent_yield = weighted.get("rent_yield") or PropertyService._rent_yield_for_type(property_type)
         estimated_rent = None
         if estimated_value:
@@ -388,6 +396,7 @@ class PropertyService:
             "opportunity_classification": opportunity_classification,
             "target_roi_pct": str(subject.get("target_roi_pct")) if subject.get("target_roi_pct") is not None else None,
             "rehab_estimate": str(subject.get("rehab_estimate")) if subject.get("rehab_estimate") is not None else None,
+            "zestimate": str(zestimate_val) if zestimate_val else None,
             "comps_used": len(comps),
             "comps": comps[:8],
             "data_source": "market_baseline" if using_market_baseline else "db_comps",
