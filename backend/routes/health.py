@@ -4,6 +4,7 @@ from flask import Blueprint
 from sqlalchemy import text
 from flask import current_app
 from backend.analytics.metrics import external_api_calls_total
+from backend.engine.runtime import get_engine_runtime
 from backend.extensions import db
 from backend.sockets.events import socket_health
 from backend.services.container_metrics_service import ContainerMetricsService
@@ -34,6 +35,16 @@ def system_health():
         redis_ok = False
 
     container_metrics = ContainerMetricsService.collect()
+    engine = None
+    try:
+        runtime = get_engine_runtime()
+        engine = {
+            "status": "online",
+            "modules": len(runtime.modules.all(include_disabled=False)),
+            "telemetry": runtime.telemetry.health_snapshot(),
+        }
+    except Exception:
+        engine = {"status": "unavailable"}
 
     return success_response(
         {
@@ -47,6 +58,7 @@ def system_health():
             "uptime_hint": int(time()),
             "api_calls_total": external_api_calls_total(),
             "containers": container_metrics,
+            "engine": engine,
         }
     )
 

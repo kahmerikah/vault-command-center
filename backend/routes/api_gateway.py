@@ -2,6 +2,7 @@ from urllib.parse import urlparse
 
 from flask import Blueprint, current_app, g, request
 from flask_jwt_extended import get_jwt_identity, jwt_required, verify_jwt_in_request
+from backend.engine.runtime import get_engine_runtime
 from backend.extensions import db
 from backend.models import ActivityLog
 from backend.utils.responses import success_response
@@ -45,26 +46,47 @@ def log_request():
     message = f"Internal API call {request.method} {request.path}" if is_site_native else f"API call {request.method} {request.path}"
 
     actor_id = None
+    claims = {}
     try:
         verify_jwt_in_request(optional=True)
         actor_id = get_jwt_identity()
+        from flask_jwt_extended import get_jwt
+
+        claims = get_jwt() or {}
     except Exception:
         actor_id = None
+        claims = {}
+
+    active_module = (getattr(g, "engine_context", {}) or {}).get("active_module")
+    telemetry = {
+        "request_id": getattr(g, "request_id", "n/a"),
+        "method": request.method,
+        "path": request.path,
+        "ip": request.remote_addr or "",
+        "origin": request.headers.get("Origin", ""),
+        "referer": request.headers.get("Referer", ""),
+        "is_site_native": is_site_native,
+        "active_module": active_module,
+        "role": claims.get("role"),
+        "permission_count": len(claims.get("permissions") or []),
+    }
+
+    if active_module:
+        try:
+            runtime = get_engine_runtime()
+            module = runtime.modules.get(active_module)
+            if module:
+                telemetry["module_api_prefix"] = module.get("api_prefix")
+                telemetry["module_enabled"] = module.get("is_enabled", False)
+        except Exception:
+            telemetry["module_enabled"] = False
 
     db.session.add(
         ActivityLog(
             actor_id=actor_id,
             level="info",
             message=message,
-            meta={
-                "request_id": getattr(g, "request_id", "n/a"),
-                "method": request.method,
-                "path": request.path,
-                "ip": request.remote_addr or "",
-                "origin": request.headers.get("Origin", ""),
-                "referer": request.headers.get("Referer", ""),
-                "is_site_native": is_site_native,
-            },
+            meta=telemetry,
         )
     )
     db.session.commit()

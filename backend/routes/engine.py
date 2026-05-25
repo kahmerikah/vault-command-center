@@ -1,119 +1,139 @@
-"""Engine routes exposing shared runtime context, registry, workflows, and health."""
 from flask import Blueprint, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
-from backend.services.engine_service import EngineService
+from backend.engine.runtime import get_engine_runtime
+from backend.middleware.auth import require_roles
+from backend.models.engine import EngineEvent, WorkflowRun
 from backend.utils.responses import error_response, success_response
+
 
 engine_bp = Blueprint("engine", __name__)
 
 
-@engine_bp.get("/health")
+@engine_bp.get("/status")
 @jwt_required()
-def engine_health():
-    return success_response(EngineService.health())
+def engine_status():
+    runtime = get_engine_runtime()
+    return success_response(runtime.runtime_snapshot())
 
 
 @engine_bp.get("/modules")
 @jwt_required()
 def engine_modules():
-    return success_response({"items": EngineService.list_modules()})
-
-
-@engine_bp.get("/context")
-@jwt_required()
-def engine_context():
-    return success_response(EngineService.get_context(get_jwt_identity()))
-
-
-@engine_bp.get("/events")
-@jwt_required()
-def engine_events():
-    from backend.models.engine import EngineEvent
-
-    limit = min(max(int(request.args.get("limit", 30)), 1), 100)
-    rows = EngineEvent.query.order_by(EngineEvent.created_at.desc()).limit(limit).all()
-    return success_response(
-        {
-            "items": [
-                {
-                    "id": row.id,
-                    "event_name": row.event_name,
-                    "source_module": row.source_module,
-                    "actor_id": row.actor_id,
-                    "correlation_id": row.correlation_id,
-                    "payload": row.payload or {},
-                    "status": row.status,
-                    "created_at": row.created_at.isoformat(),
-                }
-                for row in rows
-            ]
-        }
-    )
+    runtime = get_engine_runtime()
+    include_disabled = request.args.get("include_disabled", "true").lower() == "true"
+    return success_response({"items": runtime.modules.all(include_disabled=include_disabled)})
 
 
 @engine_bp.get("/workflows")
 @jwt_required()
 def engine_workflows():
-    from backend.models.engine import WorkflowDefinition
+    runtime = get_engine_runtime()
+    return success_response({"items": runtime.workflows.list()})
 
-    rows = WorkflowDefinition.query.order_by(WorkflowDefinition.updated_at.desc()).all()
+
+@engine_bp.post("/workflows/<workflow_key>/run")
+@jwt_required()
+@require_roles("super_admin", "admin", "moderator")
+def run_workflow(workflow_key):
+    runtime = get_engine_runtime()
+    payload = request.get_json(silent=True) or {}
+    payload["actor_id"] = get_jwt_identity()
+
+    try:
+        result = runtime.workflows.run(workflow_key=workflow_key, payload=payload)
+    except ValueError as exc:
+        return error_response(str(exc), 404)
+
+    return success_response(result)
+
+
+@engine_bp.post("/events/<event_name>")
+@jwt_required()
+@require_roles("super_admin", "admin", "moderator")
+def emit_engine_event(event_name):
+    runtime = get_engine_runtime()
+    payload = request.get_json(silent=True) or {}
+    payload["actor_id"] = get_jwt_identity()
+    runtime.events.emit(event_name, payload)
+    return success_response({"emitted": True, "event_name": event_name})
+
+
+@engine_bp.get("/events")
+@jwt_required()
+def list_engine_events():
+    page = max(int(request.args.get("page", 1)), 1)
+    limit = min(max(int(request.args.get("limit", 20)), 1), 100)
+    module_key = (request.args.get("module") or "").strip()
+    event_name = (request.args.get("event") or "").strip()
+
+    query = EngineEvent.query.order_by(EngineEvent.created_at.desc())
+    if module_key:
+        query = query.filter_by(module_key=module_key)
+    if event_name:
+        query = query.filter_by(event_name=event_name)
+
+    paged = query.paginate(page=page, per_page=limit, error_out=False)
     return success_response(
         {
             "items": [
                 {
-                    "id": row.id,
-                    "key": row.key,
-                    "name": row.name,
-                    "trigger_event": row.trigger_event,
-                    "module_key": row.module_key,
-                    "description": row.description,
-                    "is_enabled": row.is_enabled,
-                    "conditions": row.conditions or {},
-                    "actions": row.actions or [],
+                    "id": event.id,
+                    "event_name": event.event_name,
+                    "module_key": event.module_key,
+                    "actor_id": event.actor_id,
+                    "payload": event.payload,
+                    "status": event.status,
+                    "created_at": event.created_at.isoformat(),
                 }
-                for row in rows
-            ]
+                for event in paged.items
+            ],
+            "pagination": {
+                "page": page,
+                "limit": limit,
+                "total": paged.total,
+                "pages": paged.pages,
+            },
         }
     )
 
 
-@engine_bp.post("/workflows")
+@engine_bp.get("/workflow-runs")
 @jwt_required()
-def create_workflow():
-    payload = request.get_json(silent=True) or {}
-    key = (payload.get("key") or "").strip()
-    name = (payload.get("name") or "").strip()
-    trigger_event = (payload.get("trigger_event") or "").strip()
-    if not key or not name or not trigger_event:
-        return error_response("key, name, and trigger_event are required", 400)
+def workflow_runs():
+    page = max(int(request.args.get("page", 1)), 1)
+    limit = min(max(int(request.args.get("limit", 20)), 1), 100)
 
-    workflow = EngineService.register_workflow(
-        key=key,
-        name=name,
-        trigger_event=trigger_event,
-        module_key=payload.get("module_key"),
-        description=payload.get("description"),
-        conditions=payload.get("conditions") or {},
-        actions=payload.get("actions") or [],
-        is_enabled=payload.get("is_enabled", True),
+    paged = WorkflowRun.query.order_by(WorkflowRun.created_at.desc()).paginate(page=page, per_page=limit, error_out=False)
+    return success_response(
+        {
+            "items": [
+                {
+                    "id": run.id,
+                    "workflow_key": run.workflow_key,
+                    "module_key": run.module_key,
+                    "trigger_event": run.trigger_event,
+                    "actor_id": run.actor_id,
+                    "status": run.status,
+                    "input_payload": run.input_payload,
+                    "output_payload": run.output_payload,
+                    "error_message": run.error_message,
+                    "created_at": run.created_at.isoformat(),
+                }
+                for run in paged.items
+            ],
+            "pagination": {
+                "page": page,
+                "limit": limit,
+                "total": paged.total,
+                "pages": paged.pages,
+            },
+        }
     )
-    return success_response({"id": workflow.id, "key": workflow.key}, 201)
 
 
-@engine_bp.post("/events/publish")
+@engine_bp.get("/services")
 @jwt_required()
-def publish_event():
-    payload = request.get_json(silent=True) or {}
-    event_name = (payload.get("event_name") or "").strip()
-    if not event_name:
-        return error_response("event_name is required", 400)
-
-    event = EngineService.publish_event(
-        event_name,
-        payload.get("payload") or {},
-        actor_id=get_jwt_identity(),
-        source_module=payload.get("source_module"),
-        correlation_id=payload.get("correlation_id"),
-    )
-    return success_response({"id": event.id, "event_name": event.event_name}, 201)
+def service_discovery():
+    runtime = get_engine_runtime()
+    return success_response(runtime.discovery.discover())

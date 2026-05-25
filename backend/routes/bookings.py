@@ -1,6 +1,7 @@
 from datetime import datetime
 from flask import Blueprint, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
+from backend.engine.runtime import get_engine_runtime
 from backend.extensions import db
 from backend.models import Booking
 from backend.services.booking_service import BookingService
@@ -64,6 +65,18 @@ def create_booking():
         actor_id=get_jwt_identity(),
         meta={"booking_id": booking.id, "status": booking.status},
     )
+
+    get_engine_runtime().events.emit(
+        "booking.created",
+        {
+            "actor_id": get_jwt_identity(),
+            "module_key": booking.module_key,
+            "booking_id": booking.id,
+            "status": booking.status,
+            "starts_at": booking.starts_at.isoformat() if booking.starts_at else None,
+            "ends_at": booking.ends_at.isoformat() if booking.ends_at else None,
+        },
+    )
     return success_response({"id": booking.id, "status": booking.status}, 201)
 
 
@@ -106,6 +119,15 @@ def update_status(booking_id):
         message=f"Booking status updated: {booking.id}",
         actor_id=user_id,
         meta={"booking_id": booking.id, "status": booking.status},
+    )
+    get_engine_runtime().events.emit(
+        "booking.status_changed",
+        {
+            "actor_id": user_id,
+            "module_key": booking.module_key,
+            "booking_id": booking.id,
+            "status": booking.status,
+        },
     )
     return success_response({"id": booking.id, "status": booking.status})
 

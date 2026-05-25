@@ -3,6 +3,7 @@ from datetime import datetime
 
 from flask import Blueprint, current_app, request
 import stripe
+from backend.engine.runtime import get_engine_runtime
 from backend.extensions import db
 from backend.models import Payment, User, WebhookEvent
 from backend.services.activity_service import ActivityService
@@ -95,6 +96,18 @@ def _handle_checkout_session_completed(event):
         currency=(session.get("currency") or "usd").lower(),
     )
     db.session.flush()
+    get_engine_runtime().events.emit(
+        "payment.succeeded",
+        {
+            "actor_id": payment.user_id,
+            "module_key": "ecommerce",
+            "payment_id": payment.id,
+            "provider_payment_id": payment.provider_payment_id,
+            "amount": str(payment.amount),
+            "currency": payment.currency,
+            "status": payment.status,
+        },
+    )
     return payment
 
 
@@ -112,6 +125,18 @@ def _handle_payment_intent_succeeded(event):
         currency=(intent.get("currency") or "usd").lower(),
     )
     db.session.flush()
+    get_engine_runtime().events.emit(
+        "payment.succeeded",
+        {
+            "actor_id": payment.user_id,
+            "module_key": "payments",
+            "payment_id": payment.id,
+            "provider_payment_id": payment.provider_payment_id,
+            "amount": str(payment.amount),
+            "currency": payment.currency,
+            "status": payment.status,
+        },
+    )
     return payment
 
 
@@ -152,6 +177,25 @@ def _handle_refund_or_dispute(event_type, event):
             payment.currency = currency or payment.currency
 
     db.session.flush()
+    event_name = "payment.updated"
+    if event_type in {"charge.refunded", "refund.created", "refund.updated"}:
+        event_name = "payment.refunded"
+    elif event_type.startswith("charge.dispute"):
+        event_name = "payment.disputed"
+
+    get_engine_runtime().events.emit(
+        event_name,
+        {
+            "actor_id": payment.user_id,
+            "module_key": "payments",
+            "payment_id": payment.id,
+            "provider_payment_id": payment.provider_payment_id,
+            "amount": str(payment.amount),
+            "currency": payment.currency,
+            "status": payment.status,
+            "provider_event": event_type,
+        },
+    )
     return payment
 
 

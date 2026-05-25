@@ -3,7 +3,7 @@ from backend.models.api_key import ApiKey
 from backend.models.blockchain import ChainTransaction, Wallet
 from backend.models.booking import Booking
 from backend.models.contact import Contact
-from backend.models.engine import EngineEvent, EnginePlugin, WorkflowDefinition, WorkflowRun
+from backend.models.engine import EngineEvent, WorkflowRun
 from backend.models.financial import AllocationRule, FinancialAccount, PlaidTransaction, RoutingEvent
 from backend.models.integration import IntegrationAccount
 from backend.models.knowledge import BriefingLog, CalendarEvent, KnowledgeEntry
@@ -28,10 +28,9 @@ __all__ = [
     "BriefingLog",
     "Booking",
     "Contact",
+    "EngineEvent",
     "CalendarEvent",
     "ChainTransaction",
-    "EngineEvent",
-    "EnginePlugin",
     "FinancialAccount",
     "IntegrationAccount",
     "KnowledgeEntry",
@@ -48,9 +47,8 @@ __all__ = [
     "Session",
     "Subscription",
     "SystemState",
-    "WorkflowDefinition",
-    "WorkflowRun",
     "User",
     "Wallet",
+    "WorkflowRun",
     "WebhookEvent",
 ]

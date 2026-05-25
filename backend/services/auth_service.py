@@ -131,7 +131,8 @@ class AuthService:
         if not user.is_active:
             raise ValueError("user is inactive")
 
-        claims = {"role": user.role.name, "username": user.username}
+        permissions = [permission.code for permission in user.role.permissions]
+        claims = {"role": user.role.name, "username": user.username, "permissions": permissions}
         access = create_access_token(identity=user.id, additional_claims=claims)
         refresh = create_refresh_token(identity=user.id, additional_claims=claims)
 
@@ -156,7 +157,8 @@ class AuthService:
         if not session:
             raise ValueError("invalid session")
 
-        claims = {"role": user.role.name, "username": user.username}
+        permissions = [permission.code for permission in user.role.permissions]
+        claims = {"role": user.role.name, "username": user.username, "permissions": permissions}
         new_access = create_access_token(identity=user.id, additional_claims=claims)
         new_refresh = create_refresh_token(identity=user.id, additional_claims=claims)
 

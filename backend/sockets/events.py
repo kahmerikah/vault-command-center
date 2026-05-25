@@ -42,7 +42,6 @@ def register_socket_events(socketio):
             {"message": "connected", "sid": request.sid, "user_id": user_id},
             to=request.sid,
         )
-        socketio.emit("engine:ready", {"ok": True, "user_id": user_id}, to=request.sid)
 
     @socketio.on("disconnect")
     def on_disconnect():
@@ -51,7 +50,6 @@ def register_socket_events(socketio):
         if user_id:
             leave_room(f"user:{user_id}")
         leave_room("ops")
-        leave_room("engine")
 
     @socketio.on("dashboard:subscribe")
     def on_dashboard_subscribe(payload):
@@ -61,8 +59,17 @@ def register_socket_events(socketio):
 
     @socketio.on("engine:subscribe")
     def on_engine_subscribe(payload):
-        payload = payload or {}
-        for room in payload.get("rooms", ["engine"]):
-            if room:
-                join_room(room)
-        socketio.emit("engine:subscribed", {"ok": True, "rooms": payload.get("rooms", ["engine"])}, to=request.sid)
+        channel = (payload or {}).get("channel", "engine")
+        join_room(channel)
+        socketio.emit("engine:subscribed", {"ok": True, "channel": channel}, to=request.sid)
+
+    @socketio.on("module:subscribe")
+    def on_module_subscribe(payload):
+        module_key = (payload or {}).get("module_key")
+        if not module_key:
+            socketio.emit("module:subscribed", {"ok": False, "error": "module_key required"}, to=request.sid)
+            return
+
+        room = f"module:{module_key}"
+        join_room(room)
+        socketio.emit("module:subscribed", {"ok": True, "module_key": module_key}, to=request.sid)

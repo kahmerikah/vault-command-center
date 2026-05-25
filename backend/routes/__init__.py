@@ -7,6 +7,7 @@ from backend.routes.bookings import bookings_bp
 from backend.routes.contacts import contacts_bp
 from backend.routes.briefing import briefing_bp
 from backend.routes.dashboard import dashboard_bp
+from backend.routes.engine import engine_bp
 from backend.routes.membership import membership_bp
 from backend.routes.os_layer import os_bp
 from backend.routes.financial import financial_bp
@@ -21,13 +22,13 @@ from backend.routes.payments import payments_bp
 from backend.routes.property import property_bp
 from backend.payments.webhooks import webhook_bp
 
-from backend.routes.engine import engine_bp
 
 def register_routes(app):
     version = app.config["API_VERSION"]
     base = f"/api/{version}"
 
     app.register_blueprint(health_bp, url_prefix=base)
+    app.register_blueprint(engine_bp, url_prefix=f"{base}/engine")
     app.register_blueprint(gateway_bp, url_prefix=f"{base}/gateway")
     app.register_blueprint(auth_bp, url_prefix=f"{base}/auth")
     app.register_blueprint(dashboard_bp, url_prefix=f"{base}/dashboard")
@@ -49,6 +50,5 @@ def register_routes(app):
     app.register_blueprint(mobile_bp, url_prefix=f"{base}/mobile")
     app.register_blueprint(membership_bp, url_prefix=f"{base}/membership")
     app.register_blueprint(os_bp, url_prefix=f"{base}/os")
-    app.register_blueprint(engine_bp, url_prefix=f"{base}/engine")
 
     app.config["OAUTH_PROVIDERS"] = oauth_providers_config()

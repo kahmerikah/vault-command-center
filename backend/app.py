@@ -1,6 +1,7 @@
 import logging
 from flask import Flask
 from backend.config import Config
+from backend.engine.runtime import EngineRuntime, set_engine_runtime
 from backend.extensions import cors, db, jwt, limiter, migrate, socketio
 from backend.middleware.request_context import request_context_middleware
 from backend.middleware.security import apply_security_headers
@@ -8,8 +9,6 @@ from backend.models import *  # noqa: F403,F401
 from backend.routes import register_routes
 from backend.services.auth_service import AuthService
 from backend.services.blockchain_service import BlockchainService
-from backend.services.engine_service import EngineService
-from backend.services.module_registry import ModuleRegistry
 from backend.services.knowledge_service import KnowledgeService
 from backend.sockets.events import register_socket_events
 from backend.utils.logger import configure_logging
@@ -66,8 +65,10 @@ def create_app() -> Flask:
             except Exception:
                 app.logger.warning("Knowledge bootstrap skipped during app init", exc_info=True)
 
-    ModuleRegistry(app).bootstrap_from_manifests("modules")
-    EngineService.bootstrap(("modules",))
+        engine = EngineRuntime(app)
+        engine.bootstrap("modules")
+        set_engine_runtime(engine)
+
     register_routes(app)
     register_socket_events(socketio)
 

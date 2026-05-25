@@ -19,4 +19,21 @@ class ActivityService:
                 "meta": entry.meta or {},
             },
         )
+
+        socketio.emit(
+            "engine:event",
+            {
+                "event_name": "activity.logged",
+                "module_key": (meta or {}).get("module_key"),
+                "actor_id": actor_id,
+                "payload": {
+                    "activity_id": entry.id,
+                    "message": message,
+                    "level": level,
+                    "meta": meta or {},
+                },
+                "created_at": entry.created_at.isoformat(),
+            },
+            to="engine",
+        )
         return entry
