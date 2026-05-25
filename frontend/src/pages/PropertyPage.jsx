@@ -351,7 +351,18 @@ export default function PropertyPage() {
       const res = await api.post("/property/estimate", payload);
       const estimate = res.data?.data || null;
       setAnalysis(estimate);
-      if (estimate?.data_source === "market_baseline") {
+      if (estimate?.estimated_value_source === "internal_avm") {
+        const zStatus = estimate?.zillow_subject_status;
+        const zillowBlocked = zStatus === "error" || zStatus === "empty";
+        const zillowMissing = zStatus === "ok_no_zestimate";
+        if (zillowBlocked || zillowMissing) {
+          setNotice("Estimated using internal AVM (Zillow subject estimate unavailable right now). Scrape Zillow/Realtor comps for stronger confidence.");
+        } else if (estimate?.data_source === "market_baseline") {
+          setNotice("Estimated using regional market data — no local comps found. Add a listing price or scrape comps for a precise AVM.");
+        } else {
+          setNotice("Analysis complete. Internal AVM estimate generated from local comps and property features.");
+        }
+      } else if (estimate?.data_source === "market_baseline") {
         setNotice("Estimated using regional market data — no local comps found. Add a listing price or scrape comps for a precise AVM.");
       } else {
         setNotice("Analysis complete. Review and track if the opportunity is viable.");

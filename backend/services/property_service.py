@@ -298,6 +298,7 @@ class PropertyService:
         zestimate_val = _to_decimal(subject.get("zestimate"))
         if zestimate_val and zestimate_val > 0:
             estimated_value = zestimate_val
+        estimated_value_source = "zillow_zestimate" if (zestimate_val and zestimate_val > 0) else "internal_avm"
 
         rent_yield = weighted.get("rent_yield") or PropertyService._rent_yield_for_type(property_type)
         estimated_rent = None
@@ -389,6 +390,7 @@ class PropertyService:
             "area_avg_price": str(area_avg) if area_avg is not None else None,
             "area_avg_price_sqft": str(area_avg_sqft) if area_avg_sqft is not None else None,
             "estimated_value": str(estimated_value) if estimated_value is not None else None,
+            "estimated_value_source": estimated_value_source,
             "estimated_rent": str(estimated_rent) if estimated_rent is not None else None,
             "monthly_mortgage_est": str(monthly_mortgage_est) if monthly_mortgage_est is not None else None,
             "monthly_tax_est": str(monthly_tax_est) if monthly_tax_est is not None else None,
