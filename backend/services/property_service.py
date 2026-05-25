@@ -340,11 +340,9 @@ class PropertyService:
             confidence_score = min(confidence_score, 22)
         confidence_label = PropertyService._confidence_label(confidence_score)
 
-        neighborhood_trend = (
-            "stable"
-            if using_market_baseline
-            else PropertyService._neighborhood_trend(price_deviation_pct, comps_count=len(comps))
-        )
+        neighborhood_trend = PropertyService._neighborhood_trend(price_deviation_pct, comps_count=len(comps))
+        if using_market_baseline:
+            neighborhood_trend = "stable"  # no real sales data; default neutral
         appreciation_trend = PropertyService._appreciation_trend(area_avg_sqft)
         risk_level = PropertyService._risk_level(confidence_score, price_deviation_pct)
 
