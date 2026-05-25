@@ -342,7 +342,11 @@ export default function PropertyPage() {
       const res = await api.post("/property/estimate", payload);
       const estimate = res.data?.data || null;
       setAnalysis(estimate);
-      setNotice("Analysis complete. Review and track if the opportunity is viable.");
+      if (estimate?.data_source === "market_baseline") {
+        setNotice("Estimated using regional market data — no local comps found. Add a listing price or scrape comps for a precise AVM.");
+      } else {
+        setNotice("Analysis complete. Review and track if the opportunity is viable.");
+      }
       setAnalysisForm((prev) => ({
         ...prev,
         zip_code: prev.zip_code || estimate?.zip_code || "",
@@ -805,6 +809,16 @@ export default function PropertyPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-[1.4fr_1fr] gap-4">
+            {analysis.data_source === "market_baseline" && (
+              <div className="xl:col-span-2 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-amber-300 text-xs">
+                <span className="mt-0.5">⚠</span>
+                <span>
+                  <strong>Regional estimate only</strong> — no comparable sales found in the database for this area.
+                  Values are based on {analysis.city || analysis.state || "national"} market medians.
+                  For a precise AVM, enter a listing price or use <strong>Scrape Comps</strong>.
+                </span>
+              </div>
+            )}
             <div className="border border-white/10 rounded-xl p-4 bg-black/20">
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 <div>

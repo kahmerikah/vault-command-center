@@ -14,6 +14,74 @@ from backend.services.activity_service import ActivityService
 from backend.services.avm_calibration_service import AVMCalibrationService
 
 
+# ── Market baseline data (2024-2025 median price/sqft, NAR / Zillow sourced) ──
+# Used as a fallback when no DB comps exist for a zip code.
+_STATE_MEDIAN_PPSF: dict = {
+    "AL": 115, "AK": 175, "AZ": 205, "AR": 108, "CA": 365,
+    "CO": 285, "CT": 220, "DE": 205, "FL": 235, "GA": 162,
+    "HI": 495, "ID": 218, "IL": 162, "IN": 132, "IA": 122,
+    "KS": 132, "KY": 132, "LA": 142, "ME": 198, "MD": 232,
+    "MA": 315, "MI": 158, "MN": 182, "MS": 102, "MO": 148,
+    "MT": 255, "NE": 158, "NV": 225, "NH": 245, "NJ": 275,
+    "NM": 162, "NY": 280, "NC": 188, "ND": 148, "OH": 148,
+    "OK": 122, "OR": 288, "PA": 178, "RI": 268, "SC": 178,
+    "SD": 158, "TN": 188, "TX": 172, "UT": 258, "VT": 225,
+    "VA": 238, "WA": 328, "WV": 102, "WI": 172, "WY": 202,
+    "DC": 458,
+}
+
+_CITY_MEDIAN_PPSF: dict = {
+    "san francisco": 880, "new york": 720, "manhattan": 1250,
+    "los angeles": 565, "seattle": 458, "boston": 528,
+    "miami": 425, "chicago": 235, "austin": 295, "denver": 325,
+    "portland": 325, "san diego": 590, "sacramento": 252,
+    "phoenix": 215, "las vegas": 225, "atlanta": 222,
+    "dallas": 215, "houston": 158, "nashville": 295,
+    "charlotte": 228, "orlando": 218, "tampa": 245,
+    "raleigh": 235, "minneapolis": 198, "richmond": 222,
+    "jacksonville": 192, "baltimore": 205, "louisville": 148,
+    "memphis": 118, "indianapolis": 148, "columbus": 168,
+    "cincinnati": 158, "cleveland": 128, "pittsburgh": 145,
+    "detroit": 118, "milwaukee": 148, "kansas city": 158,
+    "st. louis": 148, "salt lake city": 278, "albuquerque": 168,
+    "tucson": 188, "el paso": 138, "fresno": 225,
+    "long beach": 555, "virginia beach": 212, "colorado springs": 242,
+    "fort worth": 198, "san antonio": 168,
+}
+
+_STATE_NAME_TO_ABBREV: dict = {
+    "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR",
+    "california": "CA", "colorado": "CO", "connecticut": "CT", "delaware": "DE",
+    "florida": "FL", "georgia": "GA", "hawaii": "HI", "idaho": "ID",
+    "illinois": "IL", "indiana": "IN", "iowa": "IA", "kansas": "KS",
+    "kentucky": "KY", "louisiana": "LA", "maine": "ME", "maryland": "MD",
+    "massachusetts": "MA", "michigan": "MI", "minnesota": "MN",
+    "mississippi": "MS", "missouri": "MO", "montana": "MT", "nebraska": "NE",
+    "nevada": "NV", "new hampshire": "NH", "new jersey": "NJ",
+    "new mexico": "NM", "new york": "NY", "north carolina": "NC",
+    "north dakota": "ND", "ohio": "OH", "oklahoma": "OK", "oregon": "OR",
+    "pennsylvania": "PA", "rhode island": "RI", "south carolina": "SC",
+    "south dakota": "SD", "tennessee": "TN", "texas": "TX", "utah": "UT",
+    "vermont": "VT", "virginia": "VA", "washington": "WA",
+    "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY",
+    "district of columbia": "DC",
+}
+
+_NATIONAL_MEDIAN_PPSF = 185  # fallback when state is also unknown
+
+
+def _market_baseline_ppsf(city: Optional[str], state: Optional[str]) -> int:
+    """Return best-available median $/sqft for a city or state."""
+    city_key = (city or "").strip().lower()
+    if city_key in _CITY_MEDIAN_PPSF:
+        return _CITY_MEDIAN_PPSF[city_key]
+    state_key = (state or "").strip()
+    abbrev = _STATE_NAME_TO_ABBREV.get(state_key.lower()) or (state_key.upper() if len(state_key) == 2 else None)
+    if abbrev and abbrev in _STATE_MEDIAN_PPSF:
+        return _STATE_MEDIAN_PPSF[abbrev]
+    return _NATIONAL_MEDIAN_PPSF
+
+
 class PropertyService:
     DEAL_THRESHOLD_PCT = Decimal("5.0")   # within 5% of area avg = good deal
 
@@ -152,6 +220,31 @@ class PropertyService:
         )
         comps.extend(PropertyService._normalize_comp_inputs(extra_comps or [], property_type=property_type))
 
+        # ── Market baseline fallback ─────────────────────────────────────────
+        # When no real comps exist, synthesise one virtual comp from national /
+        # state / city median price-per-sqft so the AVM still returns a
+        # meaningful (rough) estimate instead of all-zeros.
+        using_market_baseline = False
+        if not comps:
+            ppsf = _market_baseline_ppsf(subject.get("city"), subject.get("state"))
+            sqft_est = sqft or 1600
+            baseline_price = Decimal(str(ppsf * sqft_est))
+            comps.append({
+                "address": f"Market Baseline ({subject.get('city') or subject.get('state') or 'US avg'})",
+                "sale_price": baseline_price,
+                "price_per_sqft": Decimal(str(ppsf)),
+                "sqft": sqft_est,
+                "bedrooms": bedrooms or 3,
+                "bathrooms": bathrooms or Decimal("2"),
+                "year_built": year_built,
+                "distance_miles": None,
+                "latitude": None,
+                "longitude": None,
+                "property_type": property_type,
+                "source": "market_baseline",
+            })
+            using_market_baseline = True
+
         for comp in comps:
             if comp.get("distance_miles") is None:
                 comp_lat = _to_decimal(comp.get("latitude"))
@@ -243,6 +336,8 @@ class PropertyService:
             has_city_state=bool(subject.get("city") and subject.get("state")),
         )
         confidence_score = max(1, min(99, confidence_score + int(weighted.get("confidence_boost", 0))))
+        if using_market_baseline:
+            confidence_score = min(confidence_score, 22)
         confidence_label = PropertyService._confidence_label(confidence_score)
 
         neighborhood_trend = PropertyService._neighborhood_trend(price_deviation_pct, comps_count=len(comps))
@@ -292,6 +387,7 @@ class PropertyService:
             "rehab_estimate": str(subject.get("rehab_estimate")) if subject.get("rehab_estimate") is not None else None,
             "comps_used": len(comps),
             "comps": comps[:8],
+            "data_source": "market_baseline" if using_market_baseline else "db_comps",
             "avm_details": {
                 "weighted_avg_price": str(weighted.get("weighted_avg_price")) if weighted.get("weighted_avg_price") is not None else None,
                 "weighted_avg_ppsf": str(weighted.get("weighted_avg_ppsf")) if weighted.get("weighted_avg_ppsf") is not None else None,
