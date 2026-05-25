@@ -397,10 +397,26 @@ export default function PropertyPage() {
       const res = await api.post("/property/scrape-comps", payload);
       const data = res.data?.data || {};
       const nextEstimate = data.estimate || null;
+      const subjectDetails = data.subject_details || null;
+
+      // Auto-populate missing property details scraped from Zillow's property page.
+      if (subjectDetails) {
+        setAnalysisForm((prev) => ({
+          ...prev,
+          sqft: prev.sqft || (subjectDetails.sqft ? String(subjectDetails.sqft) : prev.sqft),
+          bedrooms: prev.bedrooms || (subjectDetails.bedrooms ? String(subjectDetails.bedrooms) : prev.bedrooms),
+          bathrooms: prev.bathrooms || (subjectDetails.bathrooms ? String(subjectDetails.bathrooms) : prev.bathrooms),
+          year_built: prev.year_built || (subjectDetails.year_built ? String(subjectDetails.year_built) : prev.year_built),
+          latitude: prev.latitude || (subjectDetails.latitude ? String(subjectDetails.latitude) : prev.latitude),
+          longitude: prev.longitude || (subjectDetails.longitude ? String(subjectDetails.longitude) : prev.longitude),
+        }));
+      }
+
       if (nextEstimate) {
         setAnalysis(nextEstimate);
       }
-      setNotice(`Scraped ${data.scraped_count || 0} comps from Zillow/Realtor.`);
+      const enrichMsg = subjectDetails ? " Property details auto-populated from Zillow." : "";
+      setNotice(`Scraped ${data.scraped_count || 0} comps from Zillow/Realtor.${enrichMsg}`);
     } catch (err) {
       setError(err?.response?.data?.error || "Unable to scrape comps right now.");
     } finally {

@@ -133,6 +133,60 @@ class PropertyScraperService:
         return inserted
 
     @classmethod
+    def scrape_subject_property(
+        cls,
+        *,
+        address: str,
+        headless: bool = True,
+        proxy: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch the subject property's own details from Zillow (sqft, beds, baths, year, zestimate).
+
+        Returns a dict with enrichment fields, or None if the page couldn't be scraped.
+        """
+        effective_proxy = proxy or os.getenv("SCRAPER_PROXY", "")
+        url = f"https://www.zillow.com/homes/{quote_plus(address)}_rb/"
+        page_source = cls._load_page_source_with_retry(url=url, headless=headless, proxy=effective_proxy)
+        if not page_source:
+            return None
+
+        blobs = re.findall(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', page_source, flags=re.DOTALL)
+        for blob in blobs:
+            payload = cls._safe_json(blob)
+            if not payload:
+                continue
+            text = json.dumps(payload)
+
+            sqft_m = re.search(r'"livingArea"\s*:\s*([0-9]+)', text)
+            if not sqft_m:
+                continue
+            sqft = cls._extract_number(sqft_m.group(1))
+            if not sqft or sqft < 100:
+                continue
+
+            beds_m = re.search(r'"bedrooms"\s*:\s*([0-9]+)', text)
+            baths_m = re.search(r'"bathrooms"\s*:\s*([0-9.]+)', text)
+            year_m = re.search(r'"yearBuilt"\s*:\s*([0-9]{4})', text)
+            zest_m = re.search(r'"zestimate"\s*:\s*([0-9]+)', text)
+            rent_m = re.search(r'"rentZestimate"\s*:\s*([0-9]+)', text)
+            lat_m = re.search(r'"latitude"\s*:\s*(-?[0-9]+\.[0-9]+)', text)
+            lng_m = re.search(r'"longitude"\s*:\s*(-?[0-9]+\.[0-9]+)', text)
+
+            return {
+                "sqft": sqft,
+                "bedrooms": cls._extract_number(beds_m.group(1)) if beds_m else None,
+                "bathrooms": cls._extract_number(baths_m.group(1)) if baths_m else None,
+                "year_built": cls._extract_number(year_m.group(1)) if year_m else None,
+                "latitude": cls._extract_float(lat_m.group(1)) if lat_m else None,
+                "longitude": cls._extract_float(lng_m.group(1)) if lng_m else None,
+                "zestimate": cls._extract_number(zest_m.group(1)) if zest_m else None,
+                "rent_zestimate": cls._extract_number(rent_m.group(1)) if rent_m else None,
+                "source": "zillow_selenium",
+            }
+
+        return None
+
+    @classmethod
     def _scrape_zillow(
         cls,
         *,
@@ -144,7 +198,7 @@ class PropertyScraperService:
         subject_longitude: Optional[float],
         proxy: str = "",
     ) -> List[Dict[str, Any]]:
-        url = f"https://www.zillow.com/homes/{quote_plus(query)}_rb/"
+        url = f"https://www.zillow.com/homes/recently_sold/{quote_plus(query)}_rb/"
         page_source = cls._load_page_source_with_retry(url=url, headless=headless, proxy=proxy)
         if not page_source:
             return []
@@ -256,7 +310,7 @@ class PropertyScraperService:
         subject_longitude: Optional[float],
         proxy: str = "",
     ) -> List[Dict[str, Any]]:
-        url = f"https://www.realtor.com/realestateandhomes-search/{quote_plus(query)}"
+        url = f"https://www.realtor.com/realestateandhomes-search/{quote_plus(query)}/show-recently-sold"
         page_source = cls._load_page_source_with_retry(url=url, headless=headless, proxy=proxy)
         if not page_source:
             return []

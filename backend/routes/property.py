@@ -95,6 +95,17 @@ def scrape_property_comps():
         max_results=max(1, min(max_results, 30)),
     )
 
+    # Also enrich the subject property's own details from Zillow if an address is available.
+    subject_address = address or (tracked_property.address if tracked_property else "")
+    subject_details = None
+    if subject_address:
+        try:
+            subject_details = PropertyScraperService.scrape_subject_property(address=subject_address)
+        except Exception:
+            subject_details = None
+
+    # Merge scraped subject details into the estimate payload (only fill missing fields).
+    sd = subject_details or {}
     inserted = 0
     if tracked_property and comps:
         inserted = PropertyScraperService.store_comps_for_property(property_id=tracked_property.id, comps=comps)
@@ -105,13 +116,13 @@ def scrape_property_comps():
         "city": data.get("city") or (tracked_property.city if tracked_property else None),
         "state": data.get("state") or (tracked_property.state if tracked_property else None),
         "property_type": property_type,
-        "sqft": data.get("sqft") or (tracked_property.sqft if tracked_property else None),
-        "bedrooms": data.get("bedrooms") or (tracked_property.bedrooms if tracked_property else None),
-        "bathrooms": data.get("bathrooms") or (tracked_property.bathrooms if tracked_property else None),
-        "year_built": data.get("year_built") or (tracked_property.year_built if tracked_property else None),
+        "sqft": data.get("sqft") or (tracked_property.sqft if tracked_property else None) or sd.get("sqft"),
+        "bedrooms": data.get("bedrooms") or (tracked_property.bedrooms if tracked_property else None) or sd.get("bedrooms"),
+        "bathrooms": data.get("bathrooms") or (tracked_property.bathrooms if tracked_property else None) or sd.get("bathrooms"),
+        "year_built": data.get("year_built") or (tracked_property.year_built if tracked_property else None) or sd.get("year_built"),
         "listing_price": data.get("listing_price") or (tracked_property.listing_price if tracked_property else None),
-        "latitude": latitude,
-        "longitude": longitude,
+        "latitude": latitude or sd.get("latitude"),
+        "longitude": longitude or sd.get("longitude"),
         "scraped_comps": comps,
     }
 
@@ -128,6 +139,7 @@ def scrape_property_comps():
             "sources": sorted(list({c.get("source") for c in comps if c.get("source")})),
             "comps": comps[:10],
             "estimate": estimate,
+            "subject_details": subject_details,
         }
     )
 

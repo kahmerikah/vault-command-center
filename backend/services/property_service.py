@@ -34,7 +34,8 @@ _CITY_MEDIAN_PPSF: dict = {
     "san francisco": 880, "new york": 720, "manhattan": 1250,
     "los angeles": 565, "seattle": 458, "boston": 528,
     "miami": 425, "chicago": 235, "austin": 295, "denver": 325,
-    "portland": 325, "san diego": 590, "sacramento": 252,
+    "portland": 325, "san diego": 590, "sacramento": 320,
+    "rancho cordova": 278, "elk grove": 295, "roseville": 310,
     "phoenix": 215, "las vegas": 225, "atlanta": 222,
     "dallas": 215, "houston": 158, "nashville": 295,
     "charlotte": 228, "orlando": 218, "tampa": 245,
@@ -145,7 +146,7 @@ class PropertyService:
         PropertyService.analyze(prop)
         db.session.commit()
         ActivityService.log(
-            user_id=user_id,
+            actor_id=user_id,
             message=f"Property added: {prop.address} ({prop.zip_code})",
             level="info",
         )
