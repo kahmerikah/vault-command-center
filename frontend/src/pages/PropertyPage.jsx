@@ -351,7 +351,9 @@ export default function PropertyPage() {
       const res = await api.post("/property/estimate", payload);
       const estimate = res.data?.data || null;
       setAnalysis(estimate);
-      if (estimate?.estimated_value_source === "internal_avm") {
+      if (estimate?.estimated_value_source === "realtor_estimate") {
+        setNotice("Estimated using Realtor fallback (Zillow subject estimate unavailable). Internal AVM metrics are still computed for scoring.");
+      } else if (estimate?.estimated_value_source === "internal_avm") {
         const zStatus = estimate?.zillow_subject_status;
         const zillowBlocked = zStatus === "error" || zStatus === "empty";
         const zillowMissing = zStatus === "ok_no_zestimate";

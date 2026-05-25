@@ -95,28 +95,22 @@ def estimate_property():
     data = request.json or {}
     if not data.get("address"):
         return error_response("address required", 400)
-    zillow_subject_status = "not_attempted"
     try:
-        # Enrich with live Zillow data (Zestimate + property details) before running AVM.
-        # Failure is non-fatal — AVM proceeds with whatever data is available.
-        try:
-            subject_details = PropertyScraperService.scrape_subject_property(address=data["address"])
-            if subject_details:
-                zillow_subject_status = "ok"
-                for field in ("sqft", "bedrooms", "bathrooms", "year_built", "latitude", "longitude"):
-                    if not data.get(field) and subject_details.get(field) is not None:
-                        data[field] = subject_details[field]
-                if subject_details.get("zestimate"):
-                    data["zestimate"] = subject_details["zestimate"]
-                else:
-                    zillow_subject_status = "ok_no_zestimate"
-            else:
-                zillow_subject_status = "empty"
-        except Exception:
-            zillow_subject_status = "error"
+        # Subject estimate fallback chain: Zillow -> Realtor -> internal AVM.
+        subject_details = PropertyScraperService.scrape_subject_property_with_fallback(address=data["address"]) or {}
+        for field in ("sqft", "bedrooms", "bathrooms", "year_built", "latitude", "longitude"):
+            if not data.get(field) and subject_details.get(field) is not None:
+                data[field] = subject_details[field]
+        if subject_details.get("zestimate"):
+            data["zestimate"] = subject_details["zestimate"]
+        data["subject_estimate_source"] = subject_details.get("estimate_source")
 
         estimate = PropertyService.estimate_value(data)
-        estimate["zillow_subject_status"] = zillow_subject_status
+        estimate["zillow_subject_status"] = subject_details.get("zillow_subject_status", "not_attempted")
+        estimate["realtor_subject_status"] = subject_details.get("realtor_subject_status", "skipped")
+        estimate["subject_estimate_source"] = subject_details.get("estimate_source", "internal_avm")
+        if subject_details.get("realtor_estimate"):
+            estimate["realtor_estimate"] = str(subject_details.get("realtor_estimate"))
         return success_response(estimate)
     except ValueError as exc:
         return error_response(str(exc), 400)
@@ -153,12 +147,12 @@ def scrape_property_comps():
         max_results=max(1, min(max_results, 30)),
     )
 
-    # Also enrich the subject property's own details from Zillow if an address is available.
+    # Enrich subject details with fallback chain: Zillow -> Realtor -> AVM.
     subject_address = address or (tracked_property.address if tracked_property else "")
     subject_details = None
     if subject_address:
         try:
-            subject_details = PropertyScraperService.scrape_subject_property(address=subject_address)
+            subject_details = PropertyScraperService.scrape_subject_property_with_fallback(address=subject_address)
         except Exception:
             subject_details = None
 
@@ -182,6 +176,7 @@ def scrape_property_comps():
         "latitude": latitude or sd.get("latitude"),
         "longitude": longitude or sd.get("longitude"),
         "zestimate": sd.get("zestimate"),
+        "subject_estimate_source": sd.get("estimate_source"),
         "scraped_comps": comps,
     }
 

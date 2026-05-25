@@ -106,6 +106,7 @@ class PropertyService:
                 "listing_price": normalized.get("listing_price"),
                 "sqft": normalized.get("sqft"),
                 "zestimate": _to_decimal(data.get("zestimate")),
+                "subject_estimate_source": data.get("subject_estimate_source"),
                 "target_roi_pct": _to_decimal(data.get("target_roi_pct")),
                 "rehab_estimate": _to_decimal(data.get("rehab_estimate")),
                 "down_payment_pct": _to_decimal(data.get("down_payment_pct")) or Decimal("20"),
@@ -160,9 +161,9 @@ class PropertyService:
         try:
             from backend.services.property_scraper_service import PropertyScraperService
 
-            # Keep persisted valuations aligned with live estimate flow by enriching
-            # from Zillow subject details (including zestimate) when available.
-            subject_details = PropertyScraperService.scrape_subject_property(address=prop.address) or {}
+            # Keep persisted valuations aligned with live estimate flow using
+            # subject fallback chain: Zillow -> Realtor -> internal AVM.
+            subject_details = PropertyScraperService.scrape_subject_property_with_fallback(address=prop.address) or {}
         except Exception:
             subject_details = {}
 
@@ -182,6 +183,7 @@ class PropertyService:
                 "listing_price": prop.listing_price,
                 "sqft": prop.sqft or subject_details.get("sqft"),
                 "zestimate": subject_details.get("zestimate"),
+                "subject_estimate_source": subject_details.get("estimate_source"),
             },
             property_id=prop.id,
         )
@@ -298,7 +300,13 @@ class PropertyService:
         zestimate_val = _to_decimal(subject.get("zestimate"))
         if zestimate_val and zestimate_val > 0:
             estimated_value = zestimate_val
-        estimated_value_source = "zillow_zestimate" if (zestimate_val and zestimate_val > 0) else "internal_avm"
+        estimate_provider = subject.get("subject_estimate_source")
+        if zestimate_val and zestimate_val > 0 and estimate_provider == "realtor":
+            estimated_value_source = "realtor_estimate"
+        elif zestimate_val and zestimate_val > 0:
+            estimated_value_source = "zillow_zestimate"
+        else:
+            estimated_value_source = "internal_avm"
 
         rent_yield = weighted.get("rent_yield") or PropertyService._rent_yield_for_type(property_type)
         estimated_rent = None

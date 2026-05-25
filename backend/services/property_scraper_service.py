@@ -187,6 +187,158 @@ class PropertyScraperService:
         return None
 
     @classmethod
+    def scrape_subject_property_with_fallback(
+        cls,
+        *,
+        address: str,
+        headless: bool = True,
+        proxy: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Subject enrichment fallback chain: Zillow -> Realtor -> AVM.
+
+        Returns a dict containing merged subject details plus status metadata:
+          - zillow_subject_status: ok | ok_no_estimate | empty | error
+          - realtor_subject_status: ok | ok_no_estimate | empty | error | skipped
+          - estimate_source: zillow | realtor | internal_avm
+        """
+        zillow_subject_status = "not_attempted"
+        realtor_subject_status = "skipped"
+
+        zillow_details: Dict[str, Any] = {}
+        try:
+            zillow_details = cls.scrape_subject_property(address=address, headless=headless, proxy=proxy) or {}
+            if zillow_details:
+                zillow_subject_status = "ok" if zillow_details.get("zestimate") else "ok_no_estimate"
+            else:
+                zillow_subject_status = "empty"
+        except Exception:
+            zillow_subject_status = "error"
+            zillow_details = {}
+
+        # If Zillow already provided an estimate, keep it authoritative.
+        if zillow_details.get("zestimate"):
+            out = dict(zillow_details)
+            out.update(
+                {
+                    "estimate_source": "zillow",
+                    "zillow_subject_status": zillow_subject_status,
+                    "realtor_subject_status": realtor_subject_status,
+                }
+            )
+            return out
+
+        realtor_details: Dict[str, Any] = {}
+        try:
+            realtor_details = cls._scrape_subject_property_realtor(address=address, headless=headless, proxy=proxy) or {}
+            if realtor_details:
+                realtor_subject_status = "ok" if realtor_details.get("realtor_estimate") else "ok_no_estimate"
+            else:
+                realtor_subject_status = "empty"
+        except Exception:
+            realtor_subject_status = "error"
+            realtor_details = {}
+
+        # Merge details preferring Zillow fields first, then Realtor fallback attributes.
+        merged: Dict[str, Any] = {}
+        for key in ("sqft", "bedrooms", "bathrooms", "year_built", "latitude", "longitude", "rent_zestimate"):
+            merged[key] = zillow_details.get(key) if zillow_details.get(key) is not None else realtor_details.get(key)
+
+        if realtor_details.get("realtor_estimate"):
+            # Reuse the existing "zestimate" slot in valuation payloads as the
+            # external subject estimate input, regardless of provider.
+            merged["zestimate"] = realtor_details.get("realtor_estimate")
+        else:
+            merged["zestimate"] = None
+
+        merged["realtor_estimate"] = realtor_details.get("realtor_estimate")
+        merged["estimate_source"] = "realtor" if merged.get("zestimate") else "internal_avm"
+        merged["zillow_subject_status"] = zillow_subject_status
+        merged["realtor_subject_status"] = realtor_subject_status
+        merged["source"] = realtor_details.get("source") if merged.get("zestimate") else (zillow_details.get("source") or "subject_enrichment")
+        return merged
+
+    @classmethod
+    def _scrape_subject_property_realtor(
+        cls,
+        *,
+        address: str,
+        headless: bool,
+        proxy: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch subject details from Realtor search results as fallback estimate source."""
+        effective_proxy = proxy or os.getenv("SCRAPER_PROXY", "")
+        url = f"https://www.realtor.com/realestateandhomes-search/{quote_plus(address)}"
+        page_source = cls._load_page_source_with_retry(url=url, headless=headless, proxy=effective_proxy)
+        if not page_source:
+            return None
+
+        # --- Path 1: Bootstrap state (best signal for cards/details) ---
+        blobs = re.findall(r'window\.__PRELOADED_STATE__\s*=\s*(\{.*?\});?\s*</script>', page_source, flags=re.DOTALL)
+        for blob in blobs:
+            payload = cls._safe_json(blob)
+            if not payload:
+                continue
+            text = json.dumps(payload)
+
+            # Prefer explicit estimate-style fields if present; fallback to list_price.
+            estimate_m = (
+                re.search(r'"estimated_value"\s*:\s*([0-9]+)', text)
+                or re.search(r'"current_value"\s*:\s*([0-9]+)', text)
+                or re.search(r'"list_price"\s*:\s*([0-9]+)', text)
+            )
+            if not estimate_m:
+                continue
+
+            estimate_val = cls._extract_number(estimate_m.group(1))
+            if not estimate_val:
+                continue
+
+            sqft_m = re.search(r'"sqft"\s*:\s*([0-9]+)', text) or re.search(r'"sqft_floorplan"\s*:\s*([0-9]+)', text)
+            beds_m = re.search(r'"beds"\s*:\s*([0-9]+)', text) or re.search(r'"bedrooms"\s*:\s*([0-9]+)', text)
+            baths_m = re.search(r'"baths"\s*:\s*([0-9.]+)', text) or re.search(r'"bathrooms"\s*:\s*([0-9.]+)', text)
+            lat_m = re.search(r'"lat"\s*:\s*(-?[0-9]+\.[0-9]+)', text) or re.search(r'"latitude"\s*:\s*(-?[0-9]+\.[0-9]+)', text)
+            lng_m = re.search(r'"lon"\s*:\s*(-?[0-9]+\.[0-9]+)', text) or re.search(r'"longitude"\s*:\s*(-?[0-9]+\.[0-9]+)', text)
+
+            return {
+                "sqft": cls._extract_number(sqft_m.group(1)) if sqft_m else None,
+                "bedrooms": cls._extract_number(beds_m.group(1)) if beds_m else None,
+                "bathrooms": cls._extract_number(baths_m.group(1)) if baths_m else None,
+                "year_built": None,
+                "latitude": cls._extract_float(lat_m.group(1)) if lat_m else None,
+                "longitude": cls._extract_float(lng_m.group(1)) if lng_m else None,
+                "realtor_estimate": estimate_val,
+                "source": "realtor_selenium_subject",
+            }
+
+        # --- Path 2: JSON-LD fallback ---
+        for ld_block in re.findall(r'<script[^>]+type="application/ld\+json"[^>]*>(.*?)</script>', page_source, flags=re.DOTALL):
+            ld = cls._safe_json(ld_block)
+            if not ld:
+                continue
+            items = ld if isinstance(ld, list) else [ld]
+            for item in items:
+                offers = item.get("offers") if isinstance(item, dict) else None
+                if not isinstance(offers, dict):
+                    continue
+                price = cls._extract_number(offers.get("price"))
+                if not price:
+                    continue
+                lat = cls._extract_float(item.get("latitude"))
+                lng = cls._extract_float(item.get("longitude"))
+                return {
+                    "sqft": cls._extract_number(item.get("floorSize", {}).get("value") if isinstance(item.get("floorSize"), dict) else item.get("floorSize")),
+                    "bedrooms": cls._extract_number(item.get("numberOfRooms")),
+                    "bathrooms": None,
+                    "year_built": None,
+                    "latitude": lat,
+                    "longitude": lng,
+                    "realtor_estimate": price,
+                    "source": "realtor_selenium_subject_ld",
+                }
+
+        return None
+
+    @classmethod
     def _scrape_zillow(
         cls,
         *,
