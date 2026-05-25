@@ -1,4 +1,9 @@
 import logging
+import os
+import tempfile
+from contextlib import contextmanager
+from pathlib import Path
+
 from flask import Flask
 from backend.config import Config
 from backend.engine.runtime import EngineRuntime, set_engine_runtime
@@ -12,6 +17,33 @@ from backend.services.blockchain_service import BlockchainService
 from backend.services.knowledge_service import KnowledgeService
 from backend.sockets.events import register_socket_events
 from backend.utils.logger import configure_logging
+
+
+@contextmanager
+def _database_bootstrap_lock():
+    lock_path = Path(tempfile.gettempdir()) / "somb_vault_db_bootstrap.lock"
+    with open(lock_path, "w") as lock_file:
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+
+        try:
+            yield
+        finally:
+            if os.name == "nt":
+                import msvcrt
+
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 def create_app() -> Flask:
@@ -47,7 +79,8 @@ def create_app() -> Flask:
 
     with app.app_context():
         # Bootstrap in one place so fresh installs can run without a manual migration step.
-        db.create_all()
+        with _database_bootstrap_lock():
+            db.create_all()
         AuthService.bootstrap_roles()
         system_user = AuthService.bootstrap_system_user(
             username=app.config["SYSTEM_USERNAME"],
